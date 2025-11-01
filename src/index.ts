@@ -225,11 +225,11 @@ app.listen(PORT, () => {
   console.log(`\n🌀 version: 1.1.2`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
-  console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY ? '✅' : '❌'}`);
-  console.log(`🔑 JWT configurado: ${PORTAINER_JWT ? '✅' : '❌'}`);
+  console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY}`);
+  console.log(`🔑 JWT configurado: ${PORTAINER_JWT}`);
   console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
-  console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV ? '✅' : '❌'}`);
-  console.log(`🔐 Autenticação: ${AUTH_TOKEN ? '✅ Ativa' : '❌ Desativada'}`);
+  console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV}`);
+  console.log(`🔐 Autenticação: ${AUTH_TOKEN }`);
   console.log(`\n📝 Endpoints disponíveis:`);
   console.log(`   POST   /api/stack - Criar stack`);
   console.log(`   GET    /api/stacks - Listar stacks`);
