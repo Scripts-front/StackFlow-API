@@ -82,7 +82,7 @@ services:
         - traefik.http.routers.redis-${nome}.entrypoints=websecure
         - traefik.http.routers.redis-${nome}.tls.certresolver=letsencryptresolver
         - traefik.http.routers.redis-${nome}.service=redis-${nome}
-        - traefik.http.services.redis-${nome}.loadbalancer.server.port=6379
+        - traefik.http.services.redis-${nome}.loadbalancer.server.port=${porta}
 volumes:
   redis-${nome}:
     external: true
@@ -129,13 +129,17 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     console.log('📄 Template gerado para tipo:', tipo);
     console.log('🔌 Porta exposta:', portaFinal);
 
-    // 3️⃣ Payload incluindo SwarmID
-    const payload = {
-      name: nome,
-      stackFileContent: stackContent,
-      env: [],
-      swarmID: swarmId
-    };
+    const stackName = tipo.toLowerCase() === 'redis'
+  ? `redis-${nome}-${portaFinal}`
+  : nome;
+
+      // 3️⃣ Payload incluindo SwarmID
+  const payload = {
+    name: stackName,         
+    stackFileContent: stackContent,
+    env: [],
+    swarmID: swarmId
+  };
 
     // 4️⃣ URL corrigida para criação de stacks (remover parâmetro 'method')
     const url = `${PORTAINER_URL}/api/stacks/create/swarm/string?endpointId=${endpointId}`;
@@ -218,7 +222,7 @@ app.get('/api/tipos', (req, res) => {
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.1.1`);
+  console.log(`\n🌀 version: 1.1.2`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY ? '✅' : '❌'}`);
