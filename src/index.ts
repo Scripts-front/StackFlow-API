@@ -13,18 +13,36 @@ app.use(express.json());
 // Configurações principais
 const PORT = process.env.PORT || 3000;
 const PORTAINER_URL = process.env.PORTAINER_URL || 'http://localhost:9000';
-const PORTAINER_API_KEY = process.env.PORTAINER_API_KEY || ''; // API Key
-const PORTAINER_JWT = process.env.PORTAINER_JWT || ''; // JWT (Bearer)
+const PORTAINER_API_KEY = process.env.PORTAINER_API_KEY || '';
+const PORTAINER_JWT = process.env.PORTAINER_JWT || '';
 const PORTAINER_ENDPOINT_ID = parseInt(process.env.PORTAINER_ENDPOINT_ID) || 1;
-const AUTH_TOKEN = process.env.AUTH_TOKEN ;
-const DOMAIN = process.env.DOMAIN ; 
+const AUTH_TOKEN = process.env.AUTH_TOKEN;
+const DOMAIN = process.env.DOMAIN;
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Middleware de autenticação
+// ✅ Função para obter headers de autenticação do Portainer
+const getPortainerHeaders = () => {
+  // Prioriza JWT se disponível, senão usa API Key
+  if (PORTAINER_JWT) {
+    return {
+      'Authorization': `Bearer ${PORTAINER_JWT}`,
+      'Content-Type': 'application/json'
+    };
+  } else if (PORTAINER_API_KEY) {
+    return {
+      'X-API-Key': PORTAINER_API_KEY,
+      'Content-Type': 'application/json'
+    };
+  } else {
+    throw new Error('Nenhuma credencial do Portainer configurada (JWT ou API Key)');
+  }
+};
+
+// Middleware de autenticação da API
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!AUTH_TOKEN) return next();
 
@@ -96,7 +114,7 @@ networks:
   }
 };
 
-// Endpoint para criar stack com Swarm ID usando API Key
+// Endpoint para criar stack
 app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
     const { nome, tipo, rede, porta, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
@@ -108,20 +126,22 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     // Validação de porta
     const portaFinal = porta || 6379;
     if (portaFinal < 1024 || portaFinal > 65535) {
-      return res.status(400).json({ 
-        error: 'Porta inválida', 
-        message: 'A porta deve estar entre 1024 e 65535' 
+      return res.status(400).json({
+        error: 'Porta inválida',
+        message: 'A porta deve estar entre 1024 e 65535'
       });
     }
 
-    // 1️⃣ Pegar Swarm ID do endpoint (API Key)
+    // 1️⃣ Pegar Swarm ID do endpoint
     console.log('📡 Buscando Swarm ID...');
-    const swarmResponse = await axios.get(`${PORTAINER_URL}/api/endpoints/${endpointId}/docker/swarm`, {
-      headers: { 'X-API-Key': PORTAINER_API_KEY },
-      httpsAgent
-    });
+    const headers = getPortainerHeaders();
+    
+    const swarmResponse = await axios.get(
+      `${PORTAINER_URL}/api/endpoints/${endpointId}/docker/swarm`,
+      { headers, httpsAgent }
+    );
 
-    const swarmId = swarmResponse.data.ID; // ID do Swarm
+    const swarmId = swarmResponse.data.ID;
     console.log('🆔 Swarm ID encontrado:', swarmId);
 
     // 2️⃣ Gera o template da stack
@@ -130,28 +150,25 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     console.log('🔌 Porta exposta:', portaFinal);
 
     const stackName = tipo.toLowerCase() === 'redis'
-  ? `redis-${nome}-${portaFinal}`
-  : nome;
+      ? `redis-${nome}-${portaFinal}`
+      : nome;
 
-      // 3️⃣ Payload incluindo SwarmID
-  const payload = {
-    name: stackName,         
-    stackFileContent: stackContent,
-    env: [],
-    swarmID: swarmId
-  };
+    // 3️⃣ Payload incluindo SwarmID
+    const payload = {
+      name: stackName,
+      stackFileContent: stackContent,
+      env: [],
+      swarmID: swarmId
+    };
 
-    // 4️⃣ URL corrigida para criação de stacks (remover parâmetro 'method')
+    // 4️⃣ Criar stack
     const url = `${PORTAINER_URL}/api/stacks/create/swarm/string?endpointId=${endpointId}`;
     
     console.log('🔗 URL de criação:', url);
     console.log('📦 Payload:', JSON.stringify({ ...payload, stackFileContent: '[TEMPLATE OMITIDO]' }, null, 2));
 
     const response = await axios.post(url, payload, {
-      headers: {
-        'X-API-Key': PORTAINER_API_KEY,
-        'Content-Type': 'application/json'
-      },
+      headers,
       httpsAgent
     });
 
@@ -169,7 +186,6 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     console.error('❌ Erro ao criar stack');
     if (error.response) {
       console.error('Status:', error.response.status);
-      console.error('Headers da resposta:', error.response.headers);
       console.error('Body da resposta:', JSON.stringify(error.response.data, null, 2));
     } else {
       console.error('Erro sem resposta do servidor:', error.message);
@@ -182,13 +198,11 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint para listar stacks usando JWT se fornecido
+// Endpoint para listar stacks
 app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
-    const headers = PORTAINER_JWT
-      ? { 'Authorization': `Bearer ${PORTAINER_JWT}` }
-      : { 'X-API-Key': PORTAINER_API_KEY };
-
+    const headers = getPortainerHeaders();
+    
     const response = await axios.get(`${PORTAINER_URL}/api/stacks`, {
       headers,
       httpsAgent
@@ -211,25 +225,24 @@ app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().
 app.get('/api/tipos', (req, res) => {
   res.json({
     tipos: ['redis'],
-    exemplo: { 
-      nome: 'meu-app', 
-      tipo: 'redis', 
+    exemplo: {
+      nome: 'meu-app',
+      tipo: 'redis',
       rede: 'network_public',
-      porta: 6379  // opcional, padrão: 6379
+      porta: 6379
     }
   });
 });
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.1.2`);
+  console.log(`\n🌀 version: 1.2.0`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
-  console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY}`);
-  console.log(`🔑 JWT configurado: ${PORTAINER_JWT}`);
+  console.log(`🔑 Autenticação Portainer: ${PORTAINER_JWT ? 'JWT' : PORTAINER_API_KEY ? 'API Key' : 'NENHUMA ⚠️'}`);
   console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
-  console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV}`);
-  console.log(`🔐 Autenticação: ${AUTH_TOKEN }`);
+  console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV || false}`);
+  console.log(`🔐 Auth Token API: ${AUTH_TOKEN ? '✅' : '❌'}`);
   console.log(`\n📝 Endpoints disponíveis:`);
   console.log(`   POST   /api/stack - Criar stack`);
   console.log(`   GET    /api/stacks - Listar stacks`);
