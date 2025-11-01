@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+
+  stackflow-api:
+    build: .
+    container_name: stackflow-api
+    ports:
+      - "3000:3000"
+    environment:
+      AUTH_TOKEN: 123
+      PORTAINER_TOKEN: abc
+      PORTAINER_URL: 'http://portainer.local'
+      DOCKER_ENV: true
+
+    restart: unless-stopped
