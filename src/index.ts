@@ -118,9 +118,12 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       env: []
     };
 
+    const url = `${PORTAINER_URL}/api/stacks?type=1&method=string&endpointId=${endpointId}`;
+    console.log(`📤 Enviando stack para: ${url}`);
+
     // Envia para o Portainer
     const response = await axios.post(
-      `${PORTAINER_URL}/api/stacks?type=1&method=string&endpointId=${endpointId}`,
+      url,
       payload,
       {
         headers: {
@@ -190,6 +193,7 @@ app.get('/api/tipos', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  console.log(`\n🌀 version: 1.0.1`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Token configurado: ${PORTAINER_TOKEN ? '✅' : '❌'}`);
