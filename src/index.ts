@@ -126,7 +126,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       'Content-Type': 'application/json'
     });
 
-    const response = await axios.post(url, payload, {
+    const response = await axios.put(url, payload, {
       headers: {
         'X-API-Key': PORTAINER_TOKEN,
         'Content-Type': 'application/json'
@@ -191,7 +191,7 @@ app.get('/api/tipos', (req, res) => {
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.0.5`);
+  console.log(`\n🌀 version: 1.0.6`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Token configurado: ${PORTAINER_TOKEN ? '✅' : '❌'}`);
