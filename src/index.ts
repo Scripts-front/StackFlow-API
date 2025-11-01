@@ -17,7 +17,7 @@ const PORTAINER_TOKEN = process.env.PORTAINER_TOKEN || 'seu-token-aqui';
 const PORTAINER_ENDPOINT_ID = parseInt(process.env.PORTAINER_ENDPOINT_ID) || 1;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 
-// Configuração TLS para endpoints https/tcp
+// Agent HTTPS para ignorar certificados autoassinados
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Middleware de autenticação
@@ -104,19 +104,26 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Campos obrigatórios: nome, tipo, rede' });
     }
 
+    // Gera o template da stack
     const stackContent = getStackTemplate(tipo, nome, rede);
 
+    // Payload obrigatório para method=string
     const payload = {
       name: nome,
       stackFileContent: stackContent,
       env: []
     };
 
+    // URL correta para criação de stacks
+    // type=2 -> Swarm/Compose, method=string -> conteúdo direto
     const url = `${PORTAINER_URL}/api/stacks?type=2&method=string&endpointId=${endpointId}`;
     console.log(`📤 Enviando stack para: ${url}`);
 
     const response = await axios.post(url, payload, {
-      headers: { 'X-API-Key': PORTAINER_TOKEN, 'Content-Type': 'application/json' },
+      headers: {
+        'X-API-Key': PORTAINER_TOKEN,
+        'Content-Type': 'application/json'
+      },
       httpsAgent
     });
 
@@ -165,12 +172,18 @@ app.get('/api/tipos', (req, res) => {
   });
 });
 
+// Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.0.3`);
+  console.log(`\n🌀 version: 1.0.4`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Token configurado: ${PORTAINER_TOKEN ? '✅' : '❌'}`);
   console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
   console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV ? '✅' : '❌'}`);
   console.log(`🔐 Autenticação: ${AUTH_TOKEN ? '✅ Ativa' : '❌ Desativada'}`);
+  console.log(`\n📝 Endpoints disponíveis:`);
+  console.log(`   POST   /api/stack - Criar stack`);
+  console.log(`   GET    /api/stacks - Listar stacks`);
+  console.log(`   GET    /api/tipos - Listar tipos disponíveis`);
+  console.log(`   GET    /health - Health check`);
 });
