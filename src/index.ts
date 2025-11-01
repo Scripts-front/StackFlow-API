@@ -95,7 +95,7 @@ networks:
   }
 };
 
-// Endpoint para criar stack
+// Endpoint para criar stack com logs detalhados
 app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
     const { nome, tipo, rede, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
@@ -114,10 +114,17 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       env: []
     };
 
-    // URL correta para criação de stacks
-    // type=2 -> Swarm/Compose, method=string -> conteúdo direto
+    // URL para criação de stacks
     const url = `${PORTAINER_URL}/api/stacks?type=2&method=string&endpointId=${endpointId}`;
-    console.log(`📤 Enviando stack para: ${url}`);
+
+    // Logs detalhados antes de enviar
+    console.log('📤 Tentando criar stack com os seguintes dados:');
+    console.log('URL:', url);
+    console.log('Payload:', JSON.stringify(payload, null, 2));
+    console.log('Headers:', {
+      'X-API-Key': PORTAINER_TOKEN ? '✅' : '❌',
+      'Content-Type': 'application/json'
+    });
 
     const response = await axios.post(url, payload, {
       headers: {
@@ -127,6 +134,8 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       httpsAgent
     });
 
+    console.log('✅ Stack criada com sucesso:', response.data);
+
     res.json({
       success: true,
       message: `Stack '${nome}' do tipo '${tipo}' criada com sucesso`,
@@ -135,7 +144,15 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro ao criar stack:', error.response?.data || error.message);
+    console.error('❌ Erro ao criar stack');
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Headers da resposta:', error.response.headers);
+      console.error('Body da resposta:', JSON.stringify(error.response.data, null, 2));
+    } else {
+      console.error('Erro sem resposta do servidor:', error.message);
+    }
+
     res.status(error.response?.status || 500).json({
       error: 'Erro ao criar stack',
       details: error.response?.data || error.message
@@ -174,7 +191,7 @@ app.get('/api/tipos', (req, res) => {
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.0.4`);
+  console.log(`\n🌀 version: 1.0.5`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Token configurado: ${PORTAINER_TOKEN ? '✅' : '❌'}`);
