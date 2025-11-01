@@ -118,9 +118,12 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       env: []
     };
 
+    const url = `${PORTAINER_URL}/api/stacks?type=1&method=string&endpointId=${endpointId}`;
+    console.log(`📤 Enviando stack para: ${url}`);
+
     // Envia para o Portainer
     const response = await axios.post(
-      `${PORTAINER_URL}/api/stacks?type=1&method=string&endpointId=${endpointId}`,
+      url,
       payload,
       {
         headers: {
