@@ -10,15 +10,15 @@ if (!process.env.DOCKER_ENV) {
 const app = express();
 app.use(express.json());
 
-// Configurações do Portainer
+// Configurações principais
 const PORT = process.env.PORT || 3000;
 const PORTAINER_URL = process.env.PORTAINER_URL || 'http://localhost:9000';
 const PORTAINER_API_KEY = process.env.PORTAINER_API_KEY || ''; // API Key
 const PORTAINER_JWT = process.env.PORTAINER_JWT || ''; // JWT (Bearer)
 const PORTAINER_ENDPOINT_ID = parseInt(process.env.PORTAINER_ENDPOINT_ID) || 1;
-const AUTH_TOKEN = process.env.AUTH_TOKEN;
+const AUTH_TOKEN = process.env.AUTH_TOKEN ;
+const DOMAIN = process.env.DOMAIN ; 
 
-// Agent HTTPS para ignorar certificados autoassinados
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Middleware de autenticação
@@ -29,14 +29,14 @@ const authenticateToken = (req, res, next) => {
   if (!AUTH_TOKEN) return next();
 
   if (!token) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: 'Token de autenticação não fornecido',
       message: 'Use o header: Authorization: Bearer seu-token'
     });
   }
 
   if (token !== AUTH_TOKEN) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       error: 'Token inválido',
       message: 'Token de autenticação não autorizado'
     });
@@ -45,7 +45,7 @@ const authenticateToken = (req, res, next) => {
   next();
 };
 
-// Templates das stacks
+// 🧠 Template dinâmico de stack
 const getStackTemplate = (tipo, nome, rede, porta = 6379) => {
   switch (tipo.toLowerCase()) {
     case 'redis':
@@ -78,11 +78,11 @@ services:
           memory: 1024M
       labels:
         - traefik.enable=true
-        - traefik.http.routers.redis-${nome}.rule=Host(\`redis-${nome}.hostexpert.com.br\`)
+        - traefik.http.routers.redis-${nome}.rule=Host(\`redis-${nome}.${DOMAIN}\`)
         - traefik.http.routers.redis-${nome}.entrypoints=websecure
         - traefik.http.routers.redis-${nome}.tls.certresolver=letsencryptresolver
         - traefik.http.routers.redis-${nome}.service=redis-${nome}
-        - traefik.http.services.redis-${nome}.loadbalancer.server.port=6379
+        - traefik.http.services.redis-${nome}.loadbalancer.server.port=${porta}
 volumes:
   redis-${nome}:
     external: true
@@ -129,13 +129,17 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     console.log('📄 Template gerado para tipo:', tipo);
     console.log('🔌 Porta exposta:', portaFinal);
 
-    // 3️⃣ Payload incluindo SwarmID
-    const payload = {
-      name: nome,
-      stackFileContent: stackContent,
-      env: [],
-      swarmID: swarmId
-    };
+    const stackName = tipo.toLowerCase() === 'redis'
+  ? `redis-${nome}-${portaFinal}`
+  : nome;
+
+      // 3️⃣ Payload incluindo SwarmID
+  const payload = {
+    name: stackName,         
+    stackFileContent: stackContent,
+    env: [],
+    swarmID: swarmId
+  };
 
     // 4️⃣ URL corrigida para criação de stacks (remover parâmetro 'method')
     const url = `${PORTAINER_URL}/api/stacks/create/swarm/string?endpointId=${endpointId}`;
@@ -218,7 +222,7 @@ app.get('/api/tipos', (req, res) => {
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.1.0`);
+  console.log(`\n🌀 version: 1.1.1`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY ? '✅' : '❌'}`);
