@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const https = require('https');
 
 // Carrega .env apenas se não estiver usando Docker
 if (!process.env.DOCKER_ENV) {
@@ -7,7 +8,6 @@ if (!process.env.DOCKER_ENV) {
 }
 
 const app = express();
-
 app.use(express.json());
 
 // Configurações do Portainer
@@ -17,15 +17,15 @@ const PORTAINER_TOKEN = process.env.PORTAINER_TOKEN || 'seu-token-aqui';
 const PORTAINER_ENDPOINT_ID = parseInt(process.env.PORTAINER_ENDPOINT_ID) || 1;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 
+// Configuração TLS para endpoints https/tcp
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
 // Middleware de autenticação
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
-  if (!AUTH_TOKEN) {
-    // Se não houver token configurado, permite acesso
-    return next();
-  }
+  if (!AUTH_TOKEN) return next();
 
   if (!token) {
     return res.status(401).json({ 
@@ -90,7 +90,6 @@ networks:
   ${rede}:
     external: true
     name: ${rede}`;
-
     default:
       throw new Error(`Tipo de stack '${tipo}' não suportado`);
   }
@@ -101,37 +100,25 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
     const { nome, tipo, rede, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
 
-    // Validação
     if (!nome || !tipo || !rede) {
-      return res.status(400).json({
-        error: 'Campos obrigatórios: nome, tipo, rede'
-      });
+      return res.status(400).json({ error: 'Campos obrigatórios: nome, tipo, rede' });
     }
 
-    // Gera o template da stack
     const stackContent = getStackTemplate(tipo, nome, rede);
 
-    // Payload para o Portainer
     const payload = {
       name: nome,
       stackFileContent: stackContent,
       env: []
     };
 
-    const url = `${PORTAINER_URL}/api/stacks?type=1&method=string&endpointId=${endpointId}`;
+    const url = `${PORTAINER_URL}/api/stacks?type=2&method=string&endpointId=${endpointId}`;
     console.log(`📤 Enviando stack para: ${url}`);
 
-    // Envia para o Portainer
-    const response = await axios.post(
-      url,
-      payload,
-      {
-        headers: {
-          'X-API-Key': PORTAINER_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    const response = await axios.post(url, payload, {
+      headers: { 'X-API-Key': PORTAINER_TOKEN, 'Content-Type': 'application/json' },
+      httpsAgent
+    });
 
     res.json({
       success: true,
@@ -152,20 +139,12 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
 // Endpoint para listar stacks
 app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
-    const response = await axios.get(
-      `${PORTAINER_URL}/api/stacks`,
-      {
-        headers: {
-          'X-API-Key': PORTAINER_TOKEN
-        }
-      }
-    );
-
-    res.json({
-      success: true,
-      stacks: response.data
+    const response = await axios.get(`${PORTAINER_URL}/api/stacks`, {
+      headers: { 'X-API-Key': PORTAINER_TOKEN },
+      httpsAgent
     });
 
+    res.json({ success: true, stacks: response.data });
   } catch (error) {
     console.error('Erro ao listar stacks:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
@@ -175,36 +154,23 @@ app.get('/api/stacks', authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint de health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// Endpoint para listar tipos disponíveis
+// Listar tipos
 app.get('/api/tipos', (req, res) => {
   res.json({
     tipos: ['redis'],
-    exemplo: {
-      nome: 'meu-app',
-      tipo: 'redis',
-      rede: 'network_public'
-    }
+    exemplo: { nome: 'meu-app', tipo: 'redis', rede: 'network_public' }
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.0.1`);
+  console.log(`\n🌀 version: 1.0.3`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Token configurado: ${PORTAINER_TOKEN ? '✅' : '❌'}`);
   console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
   console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV ? '✅' : '❌'}`);
   console.log(`🔐 Autenticação: ${AUTH_TOKEN ? '✅ Ativa' : '❌ Desativada'}`);
-  console.log(`\n📝 Endpoints disponíveis:`);
-  console.log(`   POST   /api/stack - Criar stack`);
-  console.log(`   GET    /api/stacks - Listar stacks`);
-  console.log(`   GET    /api/tipos - Listar tipos disponíveis`);
-  console.log(`   GET    /health - Health check`);
-  console.log(`\n💡 Exemplo de uso:`);
-  console.log(`   curl -X POST http://localhost:${PORT}/api/stack -H "Content-Type: application/json" -d '{"nome":"teste","tipo":"redis","rede":"network_public"}'`);
 });
