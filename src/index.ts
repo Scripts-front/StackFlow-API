@@ -46,7 +46,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Templates das stacks
-const getStackTemplate = (tipo, nome, rede) => {
+const getStackTemplate = (tipo, nome, rede, porta = 6379) => {
   switch (tipo.toLowerCase()) {
     case 'redis':
       return `version: "3.7"
@@ -63,7 +63,7 @@ services:
     networks:
       - ${rede}
     ports:
-      - 6379:6379
+      - ${porta}:6379
     volumes:
       - redis-${nome}:/data
     deploy:
@@ -99,10 +99,19 @@ networks:
 // Endpoint para criar stack com Swarm ID usando API Key
 app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
-    const { nome, tipo, rede, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
+    const { nome, tipo, rede, porta, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
 
     if (!nome || !tipo || !rede) {
       return res.status(400).json({ error: 'Campos obrigatórios: nome, tipo, rede' });
+    }
+
+    // Validação de porta
+    const portaFinal = porta || 6379;
+    if (portaFinal < 1024 || portaFinal > 65535) {
+      return res.status(400).json({ 
+        error: 'Porta inválida', 
+        message: 'A porta deve estar entre 1024 e 65535' 
+      });
     }
 
     // 1️⃣ Pegar Swarm ID do endpoint (API Key)
@@ -116,8 +125,9 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     console.log('🆔 Swarm ID encontrado:', swarmId);
 
     // 2️⃣ Gera o template da stack
-    const stackContent = getStackTemplate(tipo, nome, rede);
+    const stackContent = getStackTemplate(tipo, nome, rede, portaFinal);
     console.log('📄 Template gerado para tipo:', tipo);
+    console.log('🔌 Porta exposta:', portaFinal);
 
     // 3️⃣ Payload incluindo SwarmID
     const payload = {
@@ -147,6 +157,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       success: true,
       message: `Stack '${nome}' do tipo '${tipo}' criada com sucesso`,
       stackId: response.data.Id,
+      porta: portaFinal,
       data: response.data
     });
 
@@ -196,13 +207,18 @@ app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().
 app.get('/api/tipos', (req, res) => {
   res.json({
     tipos: ['redis'],
-    exemplo: { nome: 'meu-app', tipo: 'redis', rede: 'network_public' }
+    exemplo: { 
+      nome: 'meu-app', 
+      tipo: 'redis', 
+      rede: 'network_public',
+      porta: 6379  // opcional, padrão: 6379
+    }
   });
 });
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.0.9`);
+  console.log(`\n🌀 version: 1.1.0`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY ? '✅' : '❌'}`);
