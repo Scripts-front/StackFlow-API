@@ -222,7 +222,7 @@ app.get('/api/tipos', (req, res) => {
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.1.1`);
+  console.log(`\n🌀 version: 1.1.2`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 API Key configurada: ${PORTAINER_API_KEY ? '✅' : '❌'}`);
