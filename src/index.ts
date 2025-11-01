@@ -120,7 +120,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
 
     // Envia para o Portainer
     const response = await axios.post(
-      `${PORTAINER_URL}/api/stacks?type=2&method=string&endpointId=${endpointId}`,
+      `${PORTAINER_URL}/api/stacks?type=1&method=string&endpointId=${endpointId}`,
       payload,
       {
         headers: {
