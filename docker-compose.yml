@@ -10,7 +10,7 @@ services:
     environment:
       AUTH_TOKEN: 123
       PORTAINER_TOKEN: abc
-      PORTAINER_URL: 'http://portainer.local'
+      PORTAINER_URL: 'http://portainer:9000'
       DOCKER_ENV: true
 
     restart: unless-stopped
