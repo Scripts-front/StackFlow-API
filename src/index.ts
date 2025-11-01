@@ -190,6 +190,7 @@ app.get('/api/tipos', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  console.log(`\n🌀 version: 1.0.1`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Token configurado: ${PORTAINER_TOKEN ? '✅' : '❌'}`);
