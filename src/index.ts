@@ -19,6 +19,11 @@ const PORTAINER_ENDPOINT_ID = parseInt(process.env.PORTAINER_ENDPOINT_ID) || 1;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const DOMAIN = process.env.DOMAIN;
 
+// Cloudflare
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || '';
+const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || '';
+const CLOUDFLARE_DOMAIN = process.env.CLOUDFLARE_DOMAIN || '';
+
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Cache do JWT (em memória)
@@ -79,6 +84,73 @@ const getPortainerHeaders = async () => {
     'Authorization': `Bearer ${jwt}`,
     'Content-Type': 'application/json'
   };
+};
+
+// ✅ Função para criar/atualizar registro DNS na Cloudflare
+const createCloudflareRecord = async (nome, tipo, targetValue, proxied = true) => {
+  try {
+    if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ZONE_ID || !CLOUDFLARE_DOMAIN) {
+      throw new Error('Configurações da Cloudflare não definidas (API_TOKEN, ZONE_ID ou DOMAIN)');
+    }
+
+    console.log('☁️ Criando registro DNS na Cloudflare...');
+    console.log(`📝 Tipo: ${tipo}, Nome: ${nome}, Target: ${targetValue}, Proxied: ${proxied}`);
+
+    const subdomain = `${nome}.${CLOUDFLARE_DOMAIN}`;
+    
+    // Headers da Cloudflare
+    const headers = {
+      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      'Content-Type': 'application/json'
+    };
+
+    // Verifica se o registro já existe
+    const listResponse = await axios.get(
+      `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?name=${subdomain}`,
+      { headers }
+    );
+
+    const existingRecord = listResponse.data.result[0];
+
+    const recordData = {
+      type: tipo,
+      name: subdomain,
+      content: targetValue,
+      ttl: 1, // Auto
+      proxied: proxied
+    };
+
+    if (existingRecord) {
+      // Atualiza registro existente
+      console.log('🔄 Registro já existe, atualizando...');
+      
+      const updateResponse = await axios.put(
+        `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${existingRecord.id}`,
+        recordData,
+        { headers }
+      );
+
+      console.log('✅ Registro DNS atualizado na Cloudflare');
+      return updateResponse.data.result;
+
+    } else {
+      // Cria novo registro
+      console.log('➕ Criando novo registro DNS...');
+      
+      const createResponse = await axios.post(
+        `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records`,
+        recordData,
+        { headers }
+      );
+
+      console.log('✅ Registro DNS criado na Cloudflare');
+      return createResponse.data.result;
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao criar registro na Cloudflare:', error.response?.data || error.message);
+    throw error;
+  }
 };
 
 // Middleware de autenticação da API
@@ -156,7 +228,7 @@ networks:
   }
 };
 
-// Endpoint para criar stack
+// 📦 Endpoint para criar stack (Redis no Portainer)
 app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
     const { nome, tipo, rede, porta, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
@@ -249,6 +321,107 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
   }
 });
 
+// ☁️ Endpoint para criar subdomínio na Cloudflare
+app.post('/api/cloudflare', authenticateToken, async (req, res) => {
+  try {
+    const { nome, tipo, ipServidor, content, proxied } = req.body;
+
+    if (!nome || !tipo) {
+      return res.status(400).json({ 
+        error: 'Campos obrigatórios: nome, tipo',
+        exemplos: {
+          A: {
+            nome: 'redis-app1',
+            tipo: 'A',
+            ipServidor: '1.2.3.4',
+            proxied: true
+          },
+          CNAME: {
+            nome: 'redis-app1',
+            tipo: 'CNAME',
+            ipServidor: 'new.hostexpert.com.br',
+            proxied: false
+          }
+        }
+      });
+    }
+
+    // Aceita tanto 'ipServidor' quanto 'content'
+    const targetValue = ipServidor || content;
+
+    if (!targetValue) {
+      return res.status(400).json({ 
+        error: 'Campo obrigatório: ipServidor ou content',
+        message: 'Informe o IP (tipo A/AAAA) ou domínio (tipo CNAME) para apontar o DNS'
+      });
+    }
+
+    // Validação do tipo de registro
+    const tiposPermitidos = ['A', 'AAAA', 'CNAME'];
+    const tipoUpper = tipo.toUpperCase();
+    
+    if (!tiposPermitidos.includes(tipoUpper)) {
+      return res.status(400).json({
+        error: 'Tipo de registro inválido',
+        message: `Tipos permitidos: ${tiposPermitidos.join(', ')}`
+      });
+    }
+
+    // Define proxy padrão baseado no tipo ou usa o valor enviado
+    let proxiedValue;
+    if (proxied !== undefined) {
+      proxiedValue = Boolean(proxied);
+    } else {
+      // Padrão: true para A/AAAA, false para CNAME
+      proxiedValue = tipoUpper !== 'CNAME';
+    }
+
+    // Validação específica para CNAME
+    if (tipoUpper === 'CNAME') {
+      // Remove protocolo se vier com http/https
+      const cleanTarget = targetValue.replace(/^https?:\/\//, '');
+      const record = await createCloudflareRecord(nome, tipoUpper, cleanTarget, proxiedValue);
+      
+      res.json({
+        success: true,
+        message: `Subdomínio '${nome}.${CLOUDFLARE_DOMAIN}' criado/atualizado com sucesso`,
+        subdomain: `${nome}.${CLOUDFLARE_DOMAIN}`,
+        target: cleanTarget,
+        proxied: proxiedValue,
+        recordId: record.id,
+        data: record
+      });
+    } else {
+      // Para A e AAAA
+      const record = await createCloudflareRecord(nome, tipoUpper, targetValue, proxiedValue);
+      
+      res.json({
+        success: true,
+        message: `Subdomínio '${nome}.${CLOUDFLARE_DOMAIN}' criado/atualizado com sucesso`,
+        subdomain: `${nome}.${CLOUDFLARE_DOMAIN}`,
+        ip: targetValue,
+        proxied: proxiedValue,
+        recordId: record.id,
+        data: record
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao criar subdomínio na Cloudflare');
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Body da resposta:', JSON.stringify(error.response.data, null, 2));
+    } else {
+      console.error('Erro:', error.message);
+    }
+
+    res.status(error.response?.status || 500).json({
+      error: 'Erro ao criar subdomínio na Cloudflare',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Endpoint para listar stacks
 app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
@@ -275,26 +448,44 @@ app.get('/api/stacks', authenticateToken, async (req, res) => {
   }
 });
 
-
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    portainerAuth: jwtCache.token ? 'authenticated' : 'not_authenticated'
+    portainerAuth: jwtCache.token ? 'authenticated' : 'not_authenticated',
+    cloudflareConfigured: !!(CLOUDFLARE_API_TOKEN && CLOUDFLARE_ZONE_ID && CLOUDFLARE_DOMAIN)
   });
 });
 
 // Listar tipos
 app.get('/api/tipos', (req, res) => {
   res.json({
-    tipos: ['redis'],
-    exemplo: {
-      nome: 'meu-app',
-      tipo: 'redis',
-      rede: 'network_public',
-      porta: 6379
+    servicos: {
+      redis: {
+        endpoint: '/api/stack',
+        exemplo: {
+          nome: 'meu-app',
+          tipo: 'redis',
+          rede: 'network_public',
+          porta: 6379
+        }
+      },
+      cloudflare: {
+        endpoint: '/api/cloudflare',
+        exemplos: {
+          A: {
+            nome: 'redis-app1',
+            tipo: 'A',
+            ipServidor: '1.2.3.4'
+          },
+          CNAME: {
+            nome: 'redis-app1',
+            tipo: 'CNAME',
+            ipServidor: 'new.hostexpert.com.br'
+          }
+        }
+      }
     }
   });
 });
@@ -330,7 +521,7 @@ app.post('/api/auth/refresh', authenticateToken, async (req, res) => {
 // Inicialização do servidor
 const startServer = async () => {
   try {
-    // Valida credenciais obrigatórias
+    // Valida credenciais obrigatórias do Portainer
     if (!PORTAINER_USERNAME || !PORTAINER_PASSWORD) {
       console.error('❌ ERRO: PORTAINER_USERNAME e PORTAINER_PASSWORD são obrigatórios!');
       process.exit(1);
@@ -340,18 +531,23 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 2.0.0`);
+      console.log(`\n🌀 version: 2.0.1`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
-      console.log(`🔐 Autenticação: JWT Automático ✅`);
+      console.log(`🔐 Autenticação Portainer: JWT Automático ✅`);
       console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
       console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV || false}`);
       console.log(`🔐 Auth Token API: ${AUTH_TOKEN ? '✅' : '❌'}`);
+      console.log(`\n☁️ Cloudflare:`);
+      console.log(`   Token: ${CLOUDFLARE_API_TOKEN ? '✅' : '❌'}`);
+      console.log(`   Zone ID: ${CLOUDFLARE_ZONE_ID ? '✅' : '❌'}`);
+      console.log(`   Domínio: ${CLOUDFLARE_DOMAIN || 'Não configurado'}`);
       console.log(`\n📝 Endpoints disponíveis:`);
-      console.log(`   POST   /api/stack - Criar stack`);
+      console.log(`   POST   /api/stack - Criar stack Redis`);
+      console.log(`   POST   /api/cloudflare - Criar subdomínio na Cloudflare`);
       console.log(`   GET    /api/stacks - Listar stacks`);
-      console.log(`   GET    /api/tipos - Listar tipos disponíveis`);
+      console.log(`   GET    /api/tipos - Listar serviços disponíveis`);
       console.log(`   GET    /api/auth/status - Status da autenticação`);
       console.log(`   POST   /api/auth/refresh - Renovar autenticação`);
       console.log(`   GET    /health - Health check`);
