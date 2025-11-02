@@ -236,7 +236,7 @@ app.get('/api/tipos', (req, res) => {
 
 // Inicialização do servidor
 app.listen(PORT, () => {
-  console.log(`\n🌀 version: 1.2.0`);
+  console.log(`\n🌀 version: 2.0.0`);
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
   console.log(`🔑 Autenticação Portainer: ${PORTAINER_JWT ? 'JWT' : PORTAINER_API_KEY ? 'API Key' : 'NENHUMA ⚠️'}`);
