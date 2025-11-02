@@ -13,30 +13,72 @@ app.use(express.json());
 // Configurações principais
 const PORT = process.env.PORT || 3000;
 const PORTAINER_URL = process.env.PORTAINER_URL || 'http://localhost:9000';
-const PORTAINER_API_KEY = process.env.PORTAINER_API_KEY || '';
-const PORTAINER_JWT = process.env.PORTAINER_JWT || '';
+const PORTAINER_USERNAME = process.env.PORTAINER_USERNAME || 'admin';
+const PORTAINER_PASSWORD = process.env.PORTAINER_PASSWORD || '';
 const PORTAINER_ENDPOINT_ID = parseInt(process.env.PORTAINER_ENDPOINT_ID) || 1;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const DOMAIN = process.env.DOMAIN;
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// ✅ Função para obter headers de autenticação do Portainer
-const getPortainerHeaders = () => {
-  // Prioriza JWT se disponível, senão usa API Key
-  if (PORTAINER_JWT) {
-    return {
-      'Authorization': `Bearer ${PORTAINER_JWT}`,
-      'Content-Type': 'application/json'
+// Cache do JWT (em memória)
+let jwtCache = {
+  token: null,
+  expiresAt: null
+};
+
+// ✅ Função para autenticar no Portainer e obter JWT
+const authenticatePortainer = async () => {
+  try {
+    console.log('🔐 Autenticando no Portainer...');
+    
+    const response = await axios.post(
+      `${PORTAINER_URL}/api/auth`,
+      {
+        username: PORTAINER_USERNAME,
+        password: PORTAINER_PASSWORD
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        httpsAgent
+      }
+    );
+
+    const jwt = response.data.jwt;
+    
+    // Cache do token por 8 horas (padrão do Portainer)
+    jwtCache = {
+      token: jwt,
+      expiresAt: Date.now() + (8 * 60 * 60 * 1000)
     };
-  } else if (PORTAINER_API_KEY) {
-    return {
-      'X-API-Key': PORTAINER_API_KEY,
-      'Content-Type': 'application/json'
-    };
-  } else {
-    throw new Error('Nenhuma credencial do Portainer configurada (JWT ou API Key)');
+
+    console.log('✅ Autenticação bem-sucedida');
+    return jwt;
+
+  } catch (error) {
+    console.error('❌ Erro ao autenticar no Portainer:', error.response?.data || error.message);
+    throw new Error('Falha na autenticação do Portainer');
   }
+};
+
+// ✅ Função para obter JWT válido (usa cache ou renova)
+const getValidJWT = async () => {
+  // Se tem token em cache e ainda é válido
+  if (jwtCache.token && jwtCache.expiresAt > Date.now()) {
+    return jwtCache.token;
+  }
+
+  // Caso contrário, autentica novamente
+  return await authenticatePortainer();
+};
+
+// ✅ Função para obter headers com JWT válido
+const getPortainerHeaders = async () => {
+  const jwt = await getValidJWT();
+  return {
+    'Authorization': `Bearer ${jwt}`,
+    'Content-Type': 'application/json'
+  };
 };
 
 // Middleware de autenticação da API
@@ -132,9 +174,11 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       });
     }
 
-    // 1️⃣ Pegar Swarm ID do endpoint
+    // 1️⃣ Obter headers com JWT válido
+    const headers = await getPortainerHeaders();
+
+    // 2️⃣ Pegar Swarm ID do endpoint
     console.log('📡 Buscando Swarm ID...');
-    const headers = getPortainerHeaders();
     
     const swarmResponse = await axios.get(
       `${PORTAINER_URL}/api/endpoints/${endpointId}/docker/swarm`,
@@ -144,7 +188,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     const swarmId = swarmResponse.data.ID;
     console.log('🆔 Swarm ID encontrado:', swarmId);
 
-    // 2️⃣ Gera o template da stack
+    // 3️⃣ Gera o template da stack
     const stackContent = getStackTemplate(tipo, nome, rede, portaFinal);
     console.log('📄 Template gerado para tipo:', tipo);
     console.log('🔌 Porta exposta:', portaFinal);
@@ -153,7 +197,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       ? `redis-${nome}-${portaFinal}`
       : nome;
 
-    // 3️⃣ Payload incluindo SwarmID
+    // 4️⃣ Payload incluindo SwarmID
     const payload = {
       name: stackName,
       stackFileContent: stackContent,
@@ -161,7 +205,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       swarmID: swarmId
     };
 
-    // 4️⃣ Criar stack
+    // 5️⃣ Criar stack
     const url = `${PORTAINER_URL}/api/stacks/create/swarm/string?endpointId=${endpointId}`;
     
     console.log('🔗 URL de criação:', url);
@@ -184,6 +228,13 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro ao criar stack');
+    
+    // Se o erro for de autenticação, limpa o cache e tenta novamente
+    if (error.response?.status === 401) {
+      console.log('🔄 Token expirado, limpando cache...');
+      jwtCache = { token: null, expiresAt: null };
+    }
+
     if (error.response) {
       console.error('Status:', error.response.status);
       console.error('Body da resposta:', JSON.stringify(error.response.data, null, 2));
@@ -201,7 +252,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
 // Endpoint para listar stacks
 app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
-    const headers = getPortainerHeaders();
+    const headers = await getPortainerHeaders();
     
     const response = await axios.get(`${PORTAINER_URL}/api/stacks`, {
       headers,
@@ -211,6 +262,12 @@ app.get('/api/stacks', authenticateToken, async (req, res) => {
     res.json({ success: true, stacks: response.data });
   } catch (error) {
     console.error('Erro ao listar stacks:', error.response?.data || error.message);
+    
+    // Se o erro for de autenticação, limpa o cache
+    if (error.response?.status === 401) {
+      jwtCache = { token: null, expiresAt: null };
+    }
+
     res.status(error.response?.status || 500).json({
       error: 'Erro ao listar stacks',
       details: error.response?.data || error.message
@@ -218,8 +275,16 @@ app.get('/api/stacks', authenticateToken, async (req, res) => {
   }
 });
 
+
+
 // Health check
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    portainerAuth: jwtCache.token ? 'authenticated' : 'not_authenticated'
+  });
+});
 
 // Listar tipos
 app.get('/api/tipos', (req, res) => {
@@ -234,18 +299,68 @@ app.get('/api/tipos', (req, res) => {
   });
 });
 
-// Inicialização do servidor
-app.listen(PORT, () => {
-  console.log(`\n🌀 version: 2.0.0`);
-  console.log(`🚀 API rodando na porta ${PORT}`);
-  console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
-  console.log(`🔑 Autenticação Portainer: ${PORTAINER_JWT ? 'JWT' : PORTAINER_API_KEY ? 'API Key' : 'NENHUMA ⚠️'}`);
-  console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
-  console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV || false}`);
-  console.log(`🔐 Auth Token API: ${AUTH_TOKEN ? '✅' : '❌'}`);
-  console.log(`\n📝 Endpoints disponíveis:`);
-  console.log(`   POST   /api/stack - Criar stack`);
-  console.log(`   GET    /api/stacks - Listar stacks`);
-  console.log(`   GET    /api/tipos - Listar tipos disponíveis`);
-  console.log(`   GET    /health - Health check`);
+// Status da autenticação
+app.get('/api/auth/status', authenticateToken, (req, res) => {
+  res.json({
+    authenticated: !!jwtCache.token,
+    expiresAt: jwtCache.expiresAt ? new Date(jwtCache.expiresAt).toISOString() : null,
+    timeRemaining: jwtCache.expiresAt ? Math.max(0, jwtCache.expiresAt - Date.now()) : 0
+  });
 });
+
+// Forçar reautenticação
+app.post('/api/auth/refresh', authenticateToken, async (req, res) => {
+  try {
+    jwtCache = { token: null, expiresAt: null };
+    const jwt = await authenticatePortainer();
+    
+    res.json({
+      success: true,
+      message: 'Autenticação renovada com sucesso',
+      expiresAt: new Date(jwtCache.expiresAt).toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Erro ao renovar autenticação',
+      details: error.message
+    });
+  }
+});
+
+// Inicialização do servidor
+const startServer = async () => {
+  try {
+    // Valida credenciais obrigatórias
+    if (!PORTAINER_USERNAME || !PORTAINER_PASSWORD) {
+      console.error('❌ ERRO: PORTAINER_USERNAME e PORTAINER_PASSWORD são obrigatórios!');
+      process.exit(1);
+    }
+
+    // Tenta autenticar no início
+    await authenticatePortainer();
+
+    app.listen(PORT, () => {
+      console.log(`\n🌀 version: 2.0.0`);
+      console.log(`🚀 API rodando na porta ${PORT}`);
+      console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
+      console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
+      console.log(`🔐 Autenticação: JWT Automático ✅`);
+      console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
+      console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV || false}`);
+      console.log(`🔐 Auth Token API: ${AUTH_TOKEN ? '✅' : '❌'}`);
+      console.log(`\n📝 Endpoints disponíveis:`);
+      console.log(`   POST   /api/stack - Criar stack`);
+      console.log(`   GET    /api/stacks - Listar stacks`);
+      console.log(`   GET    /api/tipos - Listar tipos disponíveis`);
+      console.log(`   GET    /api/auth/status - Status da autenticação`);
+      console.log(`   POST   /api/auth/refresh - Renovar autenticação`);
+      console.log(`   GET    /health - Health check`);
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao iniciar servidor:', error.message);
+    process.exit(1);
+  }
+};
+
+startServer();
