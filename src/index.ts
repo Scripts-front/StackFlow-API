@@ -68,12 +68,9 @@ const authenticatePortainer = async () => {
 
 // ✅ Função para obter JWT válido (usa cache ou renova)
 const getValidJWT = async () => {
-  // Se tem token em cache e ainda é válido
   if (jwtCache.token && jwtCache.expiresAt > Date.now()) {
     return jwtCache.token;
   }
-
-  // Caso contrário, autentica novamente
   return await authenticatePortainer();
 };
 
@@ -98,13 +95,11 @@ const createCloudflareRecord = async (nome, tipo, targetValue, proxied = true) =
 
     const subdomain = `${nome}.${CLOUDFLARE_DOMAIN}`;
     
-    // Headers da Cloudflare
     const headers = {
       'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
       'Content-Type': 'application/json'
     };
 
-    // Verifica se o registro já existe
     const listResponse = await axios.get(
       `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?name=${subdomain}`,
       { headers }
@@ -116,12 +111,11 @@ const createCloudflareRecord = async (nome, tipo, targetValue, proxied = true) =
       type: tipo,
       name: subdomain,
       content: targetValue,
-      ttl: 1, // Auto
+      ttl: 1,
       proxied: proxied
     };
 
     if (existingRecord) {
-      // Atualiza registro existente
       console.log('🔄 Registro já existe, atualizando...');
       
       const updateResponse = await axios.put(
@@ -134,7 +128,6 @@ const createCloudflareRecord = async (nome, tipo, targetValue, proxied = true) =
       return updateResponse.data.result;
 
     } else {
-      // Cria novo registro
       console.log('➕ Criando novo registro DNS...');
       
       const createResponse = await axios.post(
@@ -178,9 +171,10 @@ const authenticateToken = (req, res, next) => {
 };
 
 // 🧠 Template dinâmico de stack
-const getStackTemplate = (tipo, nome, rede, porta = 6379) => {
+const getStackTemplate = (tipo, nome, rede, config = {}) => {
   switch (tipo.toLowerCase()) {
     case 'redis':
+      const porta = config.porta || 6379;
       return `version: "3.7"
 services:
   redis-${nome}:
@@ -223,85 +217,437 @@ networks:
   ${rede}:
     external: true
     name: ${rede}`;
+
+    case 'n8n-editor':
+      const versao = config.versaoN8n || 'latest';
+      return `version: "3.7"
+
+services:
+  n8n_editor_${nome}:
+    image: n8nio/n8n:${versao}
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    command: start
+    networks:
+      - ${rede}
+    environment:
+      - NODE_ENV=production
+      - N8N_METRICS=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PAYLOAD_SIZE_MAX=16
+      - N8N_LOG_LEVEL=info
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=false
+      - N8N_RUNNERS_MODE=internal
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=false
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${config.postgresDb || 'n8n'}
+      - DB_POSTGRESDB_HOST=${config.postgresHost || 'postgres'}
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - N8N_PORT=5678
+      - N8N_HOST=editor.${nome}.${DOMAIN}
+      - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - N8N_ENDPOINT_WEBHOOK=webhook
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
+      - QUEUE_BULL_REDIS_PORT=${config.redisPort || '6379'}
+      - QUEUE_BULL_REDIS_PASSWORD=${config.redisPassword || ''}
+      - QUEUE_BULL_REDIS_DB=2
+      - EXECUTIONS_TIMEOUT=3600 
+      - EXECUTIONS_TIMEOUT_MAX=7200 
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+      - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+      - N8N_TEMPLATES_ENABLED=true
+      - N8N_ONBOARDING_FLOW_DISABLED=true
+      - N8N_WORKFLOW_TAGS_DISABLED=false
+      - N8N_HIDE_USAGE_PAGE=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+      - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
+      - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.n8n-new == true
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+        failure_action: rollback
+networks:
+  ${rede}:
+    name: ${rede}
+    external: true`;
+
+    case 'n8n-webhook':
+      const versaoWebhook = config.versaoN8n || 'latest';
+      return `version: "3.7"
+
+services:
+  n8n_webhook_${nome}:
+    image: n8nio/n8n:${versaoWebhook}
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    command: webhook
+    networks:
+      - ${rede}
+    environment:
+      - NODE_ENV=production
+      - N8N_METRICS=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PAYLOAD_SIZE_MAX=16
+      - N8N_LOG_LEVEL=info
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=false
+      - N8N_RUNNERS_MODE=internal
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=false
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${config.postgresDb || 'n8n'}
+      - DB_POSTGRESDB_HOST=${config.postgresHost || 'postgres'}
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - N8N_PORT=5678
+      - N8N_HOST=editor.${nome}.${DOMAIN}
+      - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - N8N_ENDPOINT_WEBHOOK=webhook
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
+      - QUEUE_BULL_REDIS_PORT=${config.redisPort || '6379'}
+      - QUEUE_BULL_REDIS_PASSWORD=${config.redisPassword || ''}
+      - QUEUE_BULL_REDIS_DB=2
+      - EXECUTIONS_TIMEOUT=3600 
+      - EXECUTIONS_TIMEOUT_MAX=7200 
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+      - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+      - N8N_TEMPLATES_ENABLED=true
+      - N8N_ONBOARDING_FLOW_DISABLED=true
+      - N8N_WORKFLOW_TAGS_DISABLED=false
+      - N8N_HIDE_USAGE_PAGE=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+      - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
+      - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.n8n-new == true
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+        failure_action: rollback
+networks:
+  ${rede}:
+    name: ${rede}
+    external: true`;
+
+    case 'n8n-worker':
+      const versaoWorker = config.versaoN8n || 'latest';
+      return `version: "3.7"
+
+services:
+  n8n_worker_${nome}:
+    image: n8nio/n8n:${versaoWorker}
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    command: worker --concurrency=10
+    networks:
+      - ${rede}
+    environment:
+      - NODE_ENV=production
+      - N8N_METRICS=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PAYLOAD_SIZE_MAX=16
+      - N8N_LOG_LEVEL=info
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=false
+      - N8N_RUNNERS_MODE=internal
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=false
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${config.postgresDb || 'n8n'}
+      - DB_POSTGRESDB_HOST=${config.postgresHost || 'postgres'}
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - N8N_PORT=5678
+      - N8N_HOST=editor.${nome}.${DOMAIN}
+      - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - N8N_ENDPOINT_WEBHOOK=webhook
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
+      - QUEUE_BULL_REDIS_PORT=${config.redisPort || '6379'}
+      - QUEUE_BULL_REDIS_PASSWORD=${config.redisPassword || ''}
+      - QUEUE_BULL_REDIS_DB=2
+      - EXECUTIONS_TIMEOUT=3600 
+      - EXECUTIONS_TIMEOUT_MAX=7200 
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+      - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+      - N8N_TEMPLATES_ENABLED=true
+      - N8N_ONBOARDING_FLOW_DISABLED=true
+      - N8N_WORKFLOW_TAGS_DISABLED=false
+      - N8N_HIDE_USAGE_PAGE=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+      - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
+      - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.n8n-new == true
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+        failure_action: rollback
+networks:
+  ${rede}:
+    name: ${rede}
+    external: true`;
+
     default:
       throw new Error(`Tipo de stack '${tipo}' não suportado`);
   }
 };
 
-// 📦 Endpoint para criar stack (Redis no Portainer)
+// 🆕 Função para criar stack individual no Portainer
+const createSingleStack = async (stackName, stackContent, swarmId, endpointId, headers) => {
+  const payload = {
+    name: stackName,
+    stackFileContent: stackContent,
+    env: [],
+    swarmID: swarmId
+  };
+
+  const url = `${PORTAINER_URL}/api/stacks/create/swarm/string?endpointId=${endpointId}`;
+  
+  console.log(`🔗 Criando stack: ${stackName}`);
+
+  const response = await axios.post(url, payload, {
+    headers,
+    httpsAgent
+  });
+
+  console.log(`✅ Stack ${stackName} criada com sucesso`);
+  return response.data;
+};
+
+// 📦 Endpoint para criar stack (Redis ou N8N completo com 3 stacks separadas)
 app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
-    const { nome, tipo, rede, porta, endpointId = PORTAINER_ENDPOINT_ID } = req.body;
+    const { nome, tipo, rede, porta, endpointId = PORTAINER_ENDPOINT_ID, config = {} } = req.body;
 
     if (!nome || !tipo || !rede) {
       return res.status(400).json({ error: 'Campos obrigatórios: nome, tipo, rede' });
     }
 
-    // Validação de porta
-    const portaFinal = porta || 6379;
-    if (portaFinal < 1024 || portaFinal > 65535) {
-      return res.status(400).json({
-        error: 'Porta inválida',
-        message: 'A porta deve estar entre 1024 e 65535'
-      });
-    }
-
-    // 1️⃣ Obter headers com JWT válido
+    // Obter headers com JWT válido
     const headers = await getPortainerHeaders();
 
-    // 2️⃣ Pegar Swarm ID do endpoint
+    // Pegar Swarm ID do endpoint
     console.log('📡 Buscando Swarm ID...');
-    
     const swarmResponse = await axios.get(
       `${PORTAINER_URL}/api/endpoints/${endpointId}/docker/swarm`,
       { headers, httpsAgent }
     );
-
     const swarmId = swarmResponse.data.ID;
     console.log('🆔 Swarm ID encontrado:', swarmId);
 
-    // 3️⃣ Gera o template da stack
-    const stackContent = getStackTemplate(tipo, nome, rede, portaFinal);
-    console.log('📄 Template gerado para tipo:', tipo);
-    console.log('🔌 Porta exposta:', portaFinal);
+    const tipoLower = tipo.toLowerCase();
 
-    const stackName = tipo.toLowerCase() === 'redis'
-      ? `redis-${nome}-${portaFinal}`
-      : nome;
+    // Redis - Stack única
+    if (tipoLower === 'redis') {
+      const portaFinal = porta || 6379;
+      if (portaFinal < 1024 || portaFinal > 65535) {
+        return res.status(400).json({
+          error: 'Porta inválida',
+          message: 'A porta deve estar entre 1024 e 65535'
+        });
+      }
 
-    // 4️⃣ Payload incluindo SwarmID
-    const payload = {
-      name: stackName,
-      stackFileContent: stackContent,
-      env: [],
-      swarmID: swarmId
-    };
+      const stackContent = getStackTemplate('redis', nome, rede, { porta: portaFinal });
+      const stackName = `redis-${nome}-${portaFinal}`;
 
-    // 5️⃣ Criar stack
-    const url = `${PORTAINER_URL}/api/stacks/create/swarm/string?endpointId=${endpointId}`;
-    
-    console.log('🔗 URL de criação:', url);
-    console.log('📦 Payload:', JSON.stringify({ ...payload, stackFileContent: '[TEMPLATE OMITIDO]' }, null, 2));
+      const stackData = await createSingleStack(stackName, stackContent, swarmId, endpointId, headers);
 
-    const response = await axios.post(url, payload, {
-      headers,
-      httpsAgent
-    });
+      return res.json({
+        success: true,
+        message: `Stack Redis '${nome}' criada com sucesso`,
+        stackId: stackData.Id,
+        stackName: stackName,
+        porta: portaFinal,
+        data: stackData
+      });
+    }
 
-    console.log('✅ Stack criada com sucesso:', response.data);
+    // N8N - Cria 3 stacks separadas automaticamente
+    if (tipoLower === 'n8n') {
+      // Validar configurações obrigatórias
+      if (!config.postgresHost || !config.postgresDb || !config.postgresPassword) {
+        return res.status(400).json({
+          error: 'Configurações obrigatórias para N8N',
+          message: 'É necessário fornecer: postgresHost, postgresDb, postgresPassword, redisHost, redisPort, redisPassword',
+          exemplo: {
+            config: {
+              postgresHost: 'postgres-host',
+              postgresDb: 'n8n_db',
+              postgresPassword: 'senha-segura',
+              redisHost: 'redis-host',
+              redisPort: '6379',
+              redisPassword: 'senha-redis',
+              versaoN8n: 'latest'
+            }
+          }
+        });
+      }
 
-    res.json({
-      success: true,
-      message: `Stack '${nome}' do tipo '${tipo}' criada com sucesso`,
-      stackId: response.data.Id,
-      porta: portaFinal,
-      data: response.data
+      const stacksCreated = [];
+      const errors = [];
+
+      console.log('🚀 Iniciando criação das 3 stacks do N8N (separadas)...');
+
+      // 1️⃣ Stack Editor (separada)
+      try {
+        console.log('📝 Criando stack N8N Editor...');
+        const editorContent = getStackTemplate('n8n-editor', nome, rede, config);
+        const editorName = `n8n-editor-${nome}`;
+        const editorStack = await createSingleStack(editorName, editorContent, swarmId, endpointId, headers);
+        stacksCreated.push({ 
+          name: editorName, 
+          id: editorStack.Id, 
+          tipo: 'editor',
+          url: `https://editor.${nome}.${DOMAIN}`
+        });
+        console.log('✅ Stack Editor criada com sucesso');
+      } catch (error) {
+        errors.push({ stack: 'editor', error: error.message });
+        console.error('❌ Erro ao criar stack Editor:', error.message);
+      }
+
+      // 2️⃣ Stack Webhook (separada)
+      try {
+        console.log('📝 Criando stack N8N Webhook...');
+        const webhookContent = getStackTemplate('n8n-webhook', nome, rede, config);
+        const webhookName = `n8n-webhook-${nome}`;
+        const webhookStack = await createSingleStack(webhookName, webhookContent, swarmId, endpointId, headers);
+        stacksCreated.push({ 
+          name: webhookName, 
+          id: webhookStack.Id, 
+          tipo: 'webhook',
+          replicas: 2,
+          url: `https://webhooks.${nome}.${DOMAIN}`
+        });
+        console.log('✅ Stack Webhook criada com sucesso');
+      } catch (error) {
+        errors.push({ stack: 'webhook', error: error.message });
+        console.error('❌ Erro ao criar stack Webhook:', error.message);
+      }
+
+      // 3️⃣ Stack Worker (separada)
+      try {
+        console.log('📝 Criando stack N8N Worker...');
+        const workerContent = getStackTemplate('n8n-worker', nome, rede, config);
+        const workerName = `n8n-worker-${nome}`;
+        const workerStack = await createSingleStack(workerName, workerContent, swarmId, endpointId, headers);
+        stacksCreated.push({ 
+          name: workerName, 
+          id: workerStack.Id, 
+          tipo: 'worker',
+          concurrency: 10
+        });
+        console.log('✅ Stack Worker criada com sucesso');
+      } catch (error) {
+        errors.push({ stack: 'worker', error: error.message });
+        console.error('❌ Erro ao criar stack Worker:', error.message);
+      }
+
+      // Resposta final
+      if (errors.length > 0 && stacksCreated.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: 'Falha ao criar todas as stacks do N8N',
+          errors: errors
+        });
+      }
+
+      return res.json({
+        success: stacksCreated.length > 0,
+        message: `N8N '${nome}' criado com ${stacksCreated.length} de 3 stacks`,
+        stacksCriadas: stacksCreated.length,
+        totalStacks: 3,
+        stacks: stacksCreated,
+        errors: errors.length > 0 ? errors : undefined,
+        urls: {
+          editor: `https://editor.${nome}.${DOMAIN}`,
+          webhook: `https://webhooks.${nome}.${DOMAIN}`
+        }
+      });
+    }
+
+    return res.status(400).json({
+      error: 'Tipo não suportado',
+      message: `Os tipos suportados são: redis, n8n`
     });
 
   } catch (error) {
     console.error('❌ Erro ao criar stack');
     
-    // Se o erro for de autenticação, limpa o cache e tenta novamente
     if (error.response?.status === 401) {
       console.log('🔄 Token expirado, limpando cache...');
       jwtCache = { token: null, expiresAt: null };
@@ -346,7 +692,6 @@ app.post('/api/cloudflare', authenticateToken, async (req, res) => {
       });
     }
 
-    // Aceita tanto 'ipServidor' quanto 'content'
     const targetValue = ipServidor || content;
 
     if (!targetValue) {
@@ -356,7 +701,6 @@ app.post('/api/cloudflare', authenticateToken, async (req, res) => {
       });
     }
 
-    // Validação do tipo de registro
     const tiposPermitidos = ['A', 'AAAA', 'CNAME'];
     const tipoUpper = tipo.toUpperCase();
     
@@ -367,18 +711,14 @@ app.post('/api/cloudflare', authenticateToken, async (req, res) => {
       });
     }
 
-    // Define proxy padrão baseado no tipo ou usa o valor enviado
     let proxiedValue;
     if (proxied !== undefined) {
       proxiedValue = Boolean(proxied);
     } else {
-      // Padrão: true para A/AAAA, false para CNAME
       proxiedValue = tipoUpper !== 'CNAME';
     }
 
-    // Validação específica para CNAME
     if (tipoUpper === 'CNAME') {
-      // Remove protocolo se vier com http/https
       const cleanTarget = targetValue.replace(/^https?:\/\//, '');
       const record = await createCloudflareRecord(nome, tipoUpper, cleanTarget, proxiedValue);
       
@@ -392,7 +732,6 @@ app.post('/api/cloudflare', authenticateToken, async (req, res) => {
         data: record
       });
     } else {
-      // Para A e AAAA
       const record = await createCloudflareRecord(nome, tipoUpper, targetValue, proxiedValue);
       
       res.json({
@@ -436,7 +775,6 @@ app.get('/api/stacks', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Erro ao listar stacks:', error.response?.data || error.message);
     
-    // Se o erro for de autenticação, limpa o cache
     if (error.response?.status === 401) {
       jwtCache = { token: null, expiresAt: null };
     }
@@ -470,6 +808,24 @@ app.get('/api/tipos', (req, res) => {
           rede: 'network_public',
           porta: 6379
         }
+      },
+      n8n: {
+        endpoint: '/api/stack',
+        exemplo: {
+          nome: 'cliente1',
+          tipo: 'n8n',
+          rede: 'network_public',
+          config: {
+            postgresHost: 'postgres-host',
+            postgresDb: 'n8n_db',
+            postgresPassword: 'senha-segura',
+            redisHost: 'redis-host',
+            redisPort: '6379',
+            redisPassword: 'senha-redis',
+            versaoN8n: 'latest'
+          }
+        },
+        observacao: 'Cria 3 stacks separadas automaticamente: n8n-editor-{nome}, n8n-webhook-{nome}, n8n-worker-{nome}'
       },
       cloudflare: {
         endpoint: '/api/cloudflare',
@@ -521,17 +877,15 @@ app.post('/api/auth/refresh', authenticateToken, async (req, res) => {
 // Inicialização do servidor
 const startServer = async () => {
   try {
-    // Valida credenciais obrigatórias do Portainer
     if (!PORTAINER_USERNAME || !PORTAINER_PASSWORD) {
       console.error('❌ ERRO: PORTAINER_USERNAME e PORTAINER_PASSWORD são obrigatórios!');
       process.exit(1);
     }
 
-    // Tenta autenticar no início
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 2.0.1`);
+      console.log(`\n🌀 version: 3.0.0`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -544,13 +898,16 @@ const startServer = async () => {
       console.log(`   Zone ID: ${CLOUDFLARE_ZONE_ID ? '✅' : '❌'}`);
       console.log(`   Domínio: ${CLOUDFLARE_DOMAIN || 'Não configurado'}`);
       console.log(`\n📝 Endpoints disponíveis:`);
-      console.log(`   POST   /api/stack - Criar stack Redis`);
+      console.log(`   POST   /api/stack - Criar stack Redis ou N8N (3 stacks separadas)`);
       console.log(`   POST   /api/cloudflare - Criar subdomínio na Cloudflare`);
       console.log(`   GET    /api/stacks - Listar stacks`);
       console.log(`   GET    /api/tipos - Listar serviços disponíveis`);
       console.log(`   GET    /api/auth/status - Status da autenticação`);
       console.log(`   POST   /api/auth/refresh - Renovar autenticação`);
       console.log(`   GET    /health - Health check`);
+      console.log(`\n🎯 Tipos de stack suportados:`);
+      console.log(`   - redis: Stack Redis standalone`);
+      console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker)`);
     });
 
   } catch (error) {
