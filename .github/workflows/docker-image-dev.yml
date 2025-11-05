@@ -1,0 +1,46 @@
+name: Build and Push Docker image
+
+on:
+  push:
+    branches: [ "dev" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+      
+      - name: Extrair versão do package.json
+        id: package_version
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Mostrar versão detectada
+        run: echo 'Versão detectada:' ${{ steps.package_version.outputs.version }}
+      
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build e Push da imagem Docker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            biellil/stackflow-api:dev
+
+      
+      # - name: Aguardar propagação da imagem
+      #   run: sleep 10
+      
+      # - name: Notificar Portainer para atualizar
+      #   run: |
+      #     curl -X POST ${{ secrets.PORTAINER_WEBHOOK_URL }}
+      #   continue-on-error: true
