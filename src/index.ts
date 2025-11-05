@@ -20,9 +20,11 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const DOMAIN = process.env.DOMAIN;
 
 // Cloudflare
-const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || '';
-const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || '';
-const CLOUDFLARE_DOMAIN = process.env.CLOUDFLARE_DOMAIN || '';
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN ;
+const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
+const CLOUDFLARE_DOMAIN = process.env.CLOUDFLARE_DOMAIN;
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CLOUDFLARE_TUNNEL_ID = process.env.CLOUDFLARE_TUNNEL_ID;
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
@@ -142,6 +144,72 @@ const createCloudflareRecord = async (nome, tipo, targetValue, proxied = true) =
 
   } catch (error) {
     console.error('❌ Erro ao criar registro na Cloudflare:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// 🆕 Função para adicionar hostname ao túnel Cloudflare
+const addHostnameToTunnel = async (hostname, service) => {
+  try {
+    if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_TUNNEL_ID) {
+      throw new Error('Configurações do túnel Cloudflare não definidas (API_TOKEN, ACCOUNT_ID ou TUNNEL_ID)');
+    }
+
+    console.log('🚇 Adicionando hostname ao túnel Cloudflare...');
+    console.log(`📝 Hostname: ${hostname}, Service: ${service}`);
+
+    const headers = {
+      'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      'Content-Type': 'application/json'
+    };
+
+    // Primeiro, busca a configuração atual do túnel
+    const getTunnelUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${CLOUDFLARE_TUNNEL_ID}/configurations`;
+    
+    const currentConfig = await axios.get(getTunnelUrl, { headers });
+    
+    const existingIngress = currentConfig.data.result?.config?.ingress || [];
+    
+    // Remove regra existente para o mesmo hostname, se houver
+    const filteredIngress = existingIngress.filter(rule => rule.hostname !== hostname);
+    
+    // Adiciona a nova regra ANTES da regra catch-all
+    const catchAllRule = filteredIngress.find(rule => !rule.hostname);
+    const otherRules = filteredIngress.filter(rule => rule.hostname);
+    
+    const newRule = {
+      hostname: hostname,
+      service: service,
+      originRequest: {
+        noTLSVerify: true
+      }
+    };
+
+    // Monta o array final: outras regras + nova regra + catch-all
+    const newIngress = [...otherRules, newRule];
+    if (catchAllRule) {
+      newIngress.push(catchAllRule);
+    }
+
+    // Atualiza a configuração do túnel
+    const updatePayload = {
+      config: {
+        ingress: newIngress
+      }
+    };
+
+    const updateResponse = await axios.put(getTunnelUrl, updatePayload, { headers });
+
+    console.log('✅ Hostname adicionado ao túnel com sucesso');
+    return {
+      success: true,
+      hostname: hostname,
+      service: service,
+      tunnelId: CLOUDFLARE_TUNNEL_ID
+    };
+
+  } catch (error) {
+    console.error('❌ Erro ao adicionar hostname ao túnel:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -761,6 +829,74 @@ app.post('/api/cloudflare', authenticateToken, async (req, res) => {
   }
 });
 
+// 🚇 Endpoint para adicionar hostname ao túnel Cloudflare
+app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
+  try {
+    const { hostname, service, port = 80, protocol = 'http' } = req.body;
+
+    if (!hostname || !service) {
+      return res.status(400).json({ 
+        error: 'Campos obrigatórios: hostname, service',
+        exemplos: {
+          'N8N Editor': {
+            hostname: 'editor.cliente1.seudominio.com',
+            service: 'http://n8n_editor_cliente1:5678',
+            description: 'Aponta para o serviço N8N Editor'
+          },
+          'N8N Webhook': {
+            hostname: 'webhooks.cliente1.seudominio.com',
+            service: 'http://n8n_webhook_cliente1:5678',
+            description: 'Aponta para o serviço N8N Webhook'
+          },
+          'Redis': {
+            hostname: 'redis-app1.seudominio.com',
+            service: 'tcp://redis-app1:6379',
+            description: 'Aponta para o serviço Redis (TCP)'
+          },
+          'Com porta customizada': {
+            hostname: 'app.seudominio.com',
+            service: 'myservice',
+            port: 8080,
+            protocol: 'http',
+            description: 'Define protocolo e porta automaticamente'
+          }
+        }
+      });
+    }
+
+    // Se o service não contém protocolo, adiciona automaticamente
+    let serviceUrl = service;
+    if (!service.includes('://')) {
+      serviceUrl = `${protocol}://${service}:${port}`;
+    }
+
+    const result = await addHostnameToTunnel(hostname, serviceUrl);
+
+    res.json({
+      success: true,
+      message: `Hostname '${hostname}' adicionado ao túnel com sucesso`,
+      hostname: hostname,
+      service: serviceUrl,
+      tunnelId: result.tunnelId,
+      data: result
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao adicionar hostname ao túnel');
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Body da resposta:', JSON.stringify(error.response.data, null, 2));
+    } else {
+      console.error('Erro:', error.message);
+    }
+
+    res.status(error.response?.status || 500).json({
+      error: 'Erro ao adicionar hostname ao túnel Cloudflare',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Endpoint para listar stacks
 app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
@@ -792,7 +928,8 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     portainerAuth: jwtCache.token ? 'authenticated' : 'not_authenticated',
-    cloudflareConfigured: !!(CLOUDFLARE_API_TOKEN && CLOUDFLARE_ZONE_ID && CLOUDFLARE_DOMAIN)
+    cloudflareConfigured: !!(CLOUDFLARE_API_TOKEN && CLOUDFLARE_ZONE_ID && CLOUDFLARE_DOMAIN),
+    cloudflareTunnelConfigured: !!(CLOUDFLARE_TUNNEL_ID && CLOUDFLARE_ACCOUNT_ID)
   });
 });
 
@@ -827,7 +964,7 @@ app.get('/api/tipos', (req, res) => {
         },
         observacao: 'Cria 3 stacks separadas automaticamente: n8n-editor-{nome}, n8n-webhook-{nome}, n8n-worker-{nome}'
       },
-      cloudflare: {
+      cloudflare_dns: {
         endpoint: '/api/cloudflare',
         exemplos: {
           A: {
@@ -841,6 +978,20 @@ app.get('/api/tipos', (req, res) => {
             ipServidor: 'new.hostexpert.com.br'
           }
         }
+      },
+      cloudflare_tunnel: {
+        endpoint: '/api/cloudflare/tunnel',
+        exemplos: {
+          n8n_editor: {
+            hostname: 'editor.cliente1.seudominio.com',
+            service: 'http://n8n_editor_cliente1:5678'
+          },
+          n8n_webhook: {
+            hostname: 'webhooks.cliente1.seudominio.com',
+            service: 'http://n8n_webhook_cliente1:5678'
+          }
+        },
+        observacao: 'Adiciona hostname ao túnel Cloudflare existente'
       }
     }
   });
@@ -885,7 +1036,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 3.0.0`);
+      console.log(`\n🌀 version: 3.0.1`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -896,10 +1047,13 @@ const startServer = async () => {
       console.log(`\n☁️ Cloudflare:`);
       console.log(`   Token: ${CLOUDFLARE_API_TOKEN ? '✅' : '❌'}`);
       console.log(`   Zone ID: ${CLOUDFLARE_ZONE_ID ? '✅' : '❌'}`);
+      console.log(`   Account ID: ${CLOUDFLARE_ACCOUNT_ID ? '✅' : '❌'}`);
+      console.log(`   Tunnel ID: ${CLOUDFLARE_TUNNEL_ID ? '✅' : '❌'}`);
       console.log(`   Domínio: ${CLOUDFLARE_DOMAIN || 'Não configurado'}`);
       console.log(`\n📝 Endpoints disponíveis:`);
       console.log(`   POST   /api/stack - Criar stack Redis ou N8N (3 stacks separadas)`);
-      console.log(`   POST   /api/cloudflare - Criar subdomínio na Cloudflare`);
+      console.log(`   POST   /api/cloudflare - Criar subdomínio na Cloudflare (DNS)`);
+      console.log(`   POST   /api/cloudflare/tunnel - Adicionar hostname ao túnel Cloudflare`);
       console.log(`   GET    /api/stacks - Listar stacks`);
       console.log(`   GET    /api/tipos - Listar serviços disponíveis`);
       console.log(`   GET    /api/auth/status - Status da autenticação`);
@@ -908,6 +1062,9 @@ const startServer = async () => {
       console.log(`\n🎯 Tipos de stack suportados:`);
       console.log(`   - redis: Stack Redis standalone`);
       console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker)`);
+      console.log(`\n🚇 Cloudflare Tunnel:`);
+      console.log(`   - Configure CLOUDFLARE_TUNNEL_ID e CLOUDFLARE_ACCOUNT_ID no .env`);
+      console.log(`   - Use /api/cloudflare/tunnel para adicionar hostnames ao túnel`);
     });
 
   } catch (error) {
