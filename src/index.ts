@@ -1036,7 +1036,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 3.0.1`);
+    console.log(`\n🌀 version: 3.0.1`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -1044,12 +1044,14 @@ const startServer = async () => {
       console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
       console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV || false}`);
       console.log(`🔐 Auth Token API: ${AUTH_TOKEN ? '✅' : '❌'}`);
+
       console.log(`\n☁️ Cloudflare:`);
       console.log(`   Token: ${CLOUDFLARE_API_TOKEN ? '✅' : '❌'}`);
       console.log(`   Zone ID: ${CLOUDFLARE_ZONE_ID ? '✅' : '❌'}`);
       console.log(`   Account ID: ${CLOUDFLARE_ACCOUNT_ID ? '✅' : '❌'}`);
       console.log(`   Tunnel ID: ${CLOUDFLARE_TUNNEL_ID ? '✅' : '❌'}`);
       console.log(`   Domínio: ${CLOUDFLARE_DOMAIN || 'Não configurado'}`);
+
       console.log(`\n📝 Endpoints disponíveis:`);
       console.log(`   POST   /api/stack - Criar stack Redis ou N8N (3 stacks separadas)`);
       console.log(`   POST   /api/cloudflare - Criar subdomínio na Cloudflare (DNS)`);
@@ -1059,11 +1061,12 @@ const startServer = async () => {
       console.log(`   GET    /api/auth/status - Status da autenticação`);
       console.log(`   POST   /api/auth/refresh - Renovar autenticação`);
       console.log(`   GET    /health - Health check`);
+
       console.log(`\n🎯 Tipos de stack suportados:`);
       console.log(`   - redis: Stack Redis standalone`);
       console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker)`);
+
       console.log(`\n🚇 Cloudflare Tunnel:`);
-      console.log(`   - Configure CLOUDFLARE_TUNNEL_ID e CLOUDFLARE_ACCOUNT_ID no .env`);
       console.log(`   - Use /api/cloudflare/tunnel para adicionar hostnames ao túnel`);
     });
 
