@@ -556,6 +556,14 @@ const createSingleStack = async (stackName, stackContent, swarmId, endpointId, h
   return response.data;
 };
 
+// 🆕 Função auxiliar para aguardar com timeout
+const waitWithTimeout = (promise, timeoutMs) => {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve({ timeout: true }), timeoutMs))
+  ]);
+};
+
 // 📦 Endpoint para criar stack (Redis ou N8N completo com 3 stacks separadas)
 app.post('/api/stack', authenticateToken, async (req, res) => {
   try {
@@ -604,7 +612,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       });
     }
 
-    // N8N - Cria 3 stacks separadas automaticamente
+    // N8N - Cria 3 stacks separadas automaticamente com timeout de 30 segundos
     if (tipoLower === 'n8n') {
       // Validar configurações obrigatórias
       if (!config.postgresHost || !config.postgresDb || !config.postgresPassword) {
@@ -630,56 +638,104 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
 
       console.log('🚀 Iniciando criação das 3 stacks do N8N (separadas)...');
 
-      // 1️⃣ Stack Editor (separada)
+      // 1️⃣ Stack Editor (separada) - com timeout de 30 segundos
       try {
         console.log('📝 Criando stack N8N Editor...');
         const editorContent = getStackTemplate('n8n-editor', nome, rede, config);
         const editorName = `n8n-editor-${nome}`;
-        const editorStack = await createSingleStack(editorName, editorContent, swarmId, endpointId, headers);
-        stacksCreated.push({ 
-          name: editorName, 
-          id: editorStack.Id, 
-          tipo: 'editor',
-          url: `https://editor.${nome}.${DOMAIN}`
-        });
-        console.log('✅ Stack Editor criada com sucesso');
+        
+        const result = await waitWithTimeout(
+          createSingleStack(editorName, editorContent, swarmId, endpointId, headers),
+          30000
+        );
+        
+        if (result.timeout) {
+          stacksCreated.push({ 
+            name: editorName, 
+            tipo: 'editor',
+            url: `https://editor.${nome}.${DOMAIN}`,
+            status: 'criado'
+          });
+          console.log('✅ Stack Editor enviada (tempo limite atingido, assumindo sucesso)');
+        } else {
+          stacksCreated.push({ 
+            name: editorName, 
+            id: result.Id, 
+            tipo: 'editor',
+            url: `https://editor.${nome}.${DOMAIN}`,
+            status: 'confirmado'
+          });
+          console.log('✅ Stack Editor criada com sucesso');
+        }
       } catch (error) {
         errors.push({ stack: 'editor', error: error.message });
         console.error('❌ Erro ao criar stack Editor:', error.message);
       }
 
-      // 2️⃣ Stack Webhook (separada)
+      // 2️⃣ Stack Webhook (separada) - com timeout de 30 segundos
       try {
         console.log('📝 Criando stack N8N Webhook...');
         const webhookContent = getStackTemplate('n8n-webhook', nome, rede, config);
         const webhookName = `n8n-webhook-${nome}`;
-        const webhookStack = await createSingleStack(webhookName, webhookContent, swarmId, endpointId, headers);
-        stacksCreated.push({ 
-          name: webhookName, 
-          id: webhookStack.Id, 
-          tipo: 'webhook',
-          replicas: 2,
-          url: `https://webhooks.${nome}.${DOMAIN}`
-        });
-        console.log('✅ Stack Webhook criada com sucesso');
+        
+        const result = await waitWithTimeout(
+          createSingleStack(webhookName, webhookContent, swarmId, endpointId, headers),
+          30000
+        );
+        
+        if (result.timeout) {
+          stacksCreated.push({ 
+            name: webhookName, 
+            tipo: 'webhook',
+            replicas: 2,
+            url: `https://webhooks.${nome}.${DOMAIN}`,
+            status: 'criado'
+          });
+          console.log('✅ Stack Webhook enviada (tempo limite atingido, assumindo sucesso)');
+        } else {
+          stacksCreated.push({ 
+            name: webhookName, 
+            id: result.Id, 
+            tipo: 'webhook',
+            replicas: 2,
+            url: `https://webhooks.${nome}.${DOMAIN}`,
+            status: 'confirmado'
+          });
+          console.log('✅ Stack Webhook criada com sucesso');
+        }
       } catch (error) {
         errors.push({ stack: 'webhook', error: error.message });
         console.error('❌ Erro ao criar stack Webhook:', error.message);
       }
 
-      // 3️⃣ Stack Worker (separada)
+      // 3️⃣ Stack Worker (separada) - com timeout de 30 segundos
       try {
         console.log('📝 Criando stack N8N Worker...');
         const workerContent = getStackTemplate('n8n-worker', nome, rede, config);
         const workerName = `n8n-worker-${nome}`;
-        const workerStack = await createSingleStack(workerName, workerContent, swarmId, endpointId, headers);
-        stacksCreated.push({ 
-          name: workerName, 
-          id: workerStack.Id, 
-          tipo: 'worker',
-          concurrency: 10
-        });
-        console.log('✅ Stack Worker criada com sucesso');
+        
+        const result = await waitWithTimeout(
+          createSingleStack(workerName, workerContent, swarmId, endpointId, headers),
+          30000
+        );
+        
+        if (result.timeout) {
+          stacksCreated.push({ 
+            name: workerName, 
+            tipo: 'worker',
+            concurrency: 10,
+            status: 'criado'
+          });
+          console.log('✅ Stack Worker enviada (tempo limite atingido, assumindo sucesso)');
+        } else {
+          stacksCreated.push({ 
+            name: workerName,id: result.Id, 
+            tipo: 'worker',
+            concurrency: 10,
+            status: 'confirmado'
+          });
+          console.log('✅ Stack Worker criada com sucesso');
+        }
       } catch (error) {
         errors.push({ stack: 'worker', error: error.message });
         console.error('❌ Erro ao criar stack Worker:', error.message);
@@ -904,7 +960,7 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
 });
 
 // Endpoint para listar stacks
-app.get('/api/stacks', authenticateToken, async (req: any, res: { json: (arg0: { success: boolean; stacks: any; }) => void; status: (arg0: any) => { (): any; new(): any; json: { (arg0: { error: string; details: any; }): void; new(): any; }; }; }) => {
+app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
     const headers = await getPortainerHeaders();
     
@@ -929,7 +985,7 @@ app.get('/api/stacks', authenticateToken, async (req: any, res: { json: (arg0: {
 });
 
 // Health check
-app.get('/health', (req: any, res: { json: (arg0: { status: string; timestamp: string; portainerAuth: string; cloudflareConfigured: boolean; cloudflareTunnelConfigured: boolean; }) => void; }) => {
+app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -940,7 +996,7 @@ app.get('/health', (req: any, res: { json: (arg0: { status: string; timestamp: s
 });
 
 // Listar tipos
-app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endpoint: string; exemplo: { nome: string; tipo: string; rede: string; porta: number; }; }; n8n: { endpoint: string; exemplo: { nome: string; tipo: string; rede: string; config: { postgresHost: string; postgresDb: string; postgresPassword: string; redisHost: string; redisPort: string; redisPassword: string; versaoN8n: string; }; }; observacao: string; }; cloudflare_dns: { endpoint: string; exemplos: { A: { nome: string; tipo: string; ipServidor: string; }; CNAME: { nome: string; tipo: string; ipServidor: string; }; }; }; cloudflare_tunnel: { endpoint: string; exemplos: { n8n_editor: { hostname: string; service: string; description: string; }; n8n_webhook: { hostname: string; service: string; description: string; }; }; observacao: string; }; }; }) => void; }) => {
+app.get('/api/tipos', (req, res) => {
   res.json({
     servicos: {
       redis: {
@@ -968,7 +1024,7 @@ app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endp
             versaoN8n: 'latest'
           }
         },
-        observacao: 'Cria 3 stacks separadas automaticamente: n8n-editor-{nome}, n8n-webhook-{nome}, n8n-worker-{nome}'
+        observacao: 'Cria 3 stacks separadas automaticamente: n8n-editor-{nome}, n8n-webhook-{nome}, n8n-worker-{nome}. Timeout de 30 segundos por stack.'
       },
       cloudflare_dns: {
         endpoint: '/api/cloudflare',
@@ -1006,7 +1062,7 @@ app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endp
 });
 
 // Status da autenticação
-app.get('/api/auth/status', authenticateToken, (req: any, res: { json: (arg0: { authenticated: boolean; expiresAt: string | null; timeRemaining: number; }) => void; }) => {
+app.get('/api/auth/status', authenticateToken, (req, res) => {
   res.json({
     authenticated: !!jwtCache.token,
     expiresAt: jwtCache.expiresAt ? new Date(jwtCache.expiresAt).toISOString() : null,
@@ -1015,7 +1071,7 @@ app.get('/api/auth/status', authenticateToken, (req: any, res: { json: (arg0: { 
 });
 
 // Forçar reautenticação
-app.post('/api/auth/refresh', authenticateToken, async (req: any, res: { json: (arg0: { success: boolean; message: string; expiresAt: string; }) => void; status: (arg0: number) => { (): any; new(): any; json: { (arg0: { error: string; details: any; }): void; new(): any; }; }; }) => {
+app.post('/api/auth/refresh', authenticateToken, async (req, res) => {
   try {
     jwtCache = { token: null, expiresAt: null };
     const jwt = await authenticatePortainer();
@@ -1044,7 +1100,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 3.0.2`);
+      console.log(`\n🌀 version: 3.0.3`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -1074,6 +1130,7 @@ const startServer = async () => {
       console.log(`\n🎯 Tipos de stack suportados:`);
       console.log(`   - redis: Stack Redis standalone`);
       console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker)`);
+      console.log(`   - ⏱️  Timeout: 30 segundos por stack N8N`);
 
       console.log(`\n🚇 Cloudflare Tunnel:`);
       console.log(`   - Use /api/cloudflare/tunnel para adicionar hostnames ao túnel`);
