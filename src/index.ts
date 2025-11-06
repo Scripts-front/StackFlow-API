@@ -839,30 +839,35 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
         error: 'Campos obrigatórios: hostname, service',
         exemplos: {
           'N8N Editor': {
-            hostname: 'editor.cliente1.seudominio.com',
+            hostname: 'editor.cliente1',
             service: 'http://n8n_editor_cliente1:5678',
-            description: 'Aponta para o serviço N8N Editor'
+            description: `Será criado: editor.cliente1.${DOMAIN}`
           },
           'N8N Webhook': {
-            hostname: 'webhooks.cliente1.seudominio.com',
+            hostname: 'webhooks.cliente1',
             service: 'http://n8n_webhook_cliente1:5678',
-            description: 'Aponta para o serviço N8N Webhook'
+            description: `Será criado: webhooks.cliente1.${DOMAIN}`
           },
           'Redis': {
-            hostname: 'redis-app1.seudominio.com',
+            hostname: 'redis-app1',
             service: 'tcp://redis-app1:6379',
-            description: 'Aponta para o serviço Redis (TCP)'
+            description: `Será criado: redis-app1.${DOMAIN}`
           },
           'Com porta customizada': {
-            hostname: 'app.seudominio.com',
+            hostname: 'app',
             service: 'myservice',
             port: 8080,
             protocol: 'http',
-            description: 'Define protocolo e porta automaticamente'
+            description: `Será criado: app.${DOMAIN}`
           }
         }
       });
     }
+
+    // Adiciona o DOMAIN ao hostname se não estiver presente
+    const fullHostname = hostname.includes('.') && hostname.split('.').length > 2 
+      ? hostname 
+      : `${hostname}.${DOMAIN}`;
 
     // Se o service não contém protocolo, adiciona automaticamente
     let serviceUrl = service;
@@ -870,12 +875,13 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
       serviceUrl = `${protocol}://${service}:${port}`;
     }
 
-    const result = await addHostnameToTunnel(hostname, serviceUrl);
+    const result = await addHostnameToTunnel(fullHostname, serviceUrl);
 
     res.json({
       success: true,
-      message: `Hostname '${hostname}' adicionado ao túnel com sucesso`,
-      hostname: hostname,
+      message: `Hostname '${fullHostname}' adicionado ao túnel com sucesso`,
+      hostname: fullHostname,
+      hostnameInformado: hostname,
       service: serviceUrl,
       tunnelId: result.tunnelId,
       data: result
@@ -983,15 +989,17 @@ app.get('/api/tipos', (req, res) => {
         endpoint: '/api/cloudflare/tunnel',
         exemplos: {
           n8n_editor: {
-            hostname: 'editor.cliente1.seudominio.com',
-            service: 'http://n8n_editor_cliente1:5678'
+            hostname: 'editor.cliente1',
+            service: 'http://n8n_editor_cliente1:5678',
+            description: `Hostname completo será: editor.cliente1.${DOMAIN}`
           },
           n8n_webhook: {
-            hostname: 'webhooks.cliente1.seudominio.com',
-            service: 'http://n8n_webhook_cliente1:5678'
+            hostname: 'webhooks.cliente1',
+            service: 'http://n8n_webhook_cliente1:5678',
+            description: `Hostname completo será: webhooks.cliente1.${DOMAIN}`
           }
         },
-        observacao: 'Adiciona hostname ao túnel Cloudflare existente'
+        observacao: `Adiciona hostname ao túnel Cloudflare. O domínio ${DOMAIN} será adicionado automaticamente`
       }
     }
   });
@@ -1036,7 +1044,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-    console.log(`\n🌀 version: 3.0.1`);
+      console.log(`\n🌀 version: 3.0.2`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -1044,6 +1052,7 @@ const startServer = async () => {
       console.log(`🌐 Endpoint ID padrão: ${PORTAINER_ENDPOINT_ID}`);
       console.log(`🐳 Modo Docker: ${process.env.DOCKER_ENV || false}`);
       console.log(`🔐 Auth Token API: ${AUTH_TOKEN ? '✅' : '❌'}`);
+      console.log(`🌍 Domínio principal: ${DOMAIN || 'Não configurado'}`);
 
       console.log(`\n☁️ Cloudflare:`);
       console.log(`   Token: ${CLOUDFLARE_API_TOKEN ? '✅' : '❌'}`);
@@ -1068,6 +1077,7 @@ const startServer = async () => {
 
       console.log(`\n🚇 Cloudflare Tunnel:`);
       console.log(`   - Use /api/cloudflare/tunnel para adicionar hostnames ao túnel`);
+      console.log(`   - O domínio ${DOMAIN} será adicionado automaticamente aos hostnames`);
     });
 
   } catch (error) {
