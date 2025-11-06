@@ -904,7 +904,7 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
 });
 
 // Endpoint para listar stacks
-app.get('/api/stacks', authenticateToken, async (req, res) => {
+app.get('/api/stacks', authenticateToken, async (req: any, res: { json: (arg0: { success: boolean; stacks: any; }) => void; status: (arg0: any) => { (): any; new(): any; json: { (arg0: { error: string; details: any; }): void; new(): any; }; }; }) => {
   try {
     const headers = await getPortainerHeaders();
     
@@ -929,7 +929,7 @@ app.get('/api/stacks', authenticateToken, async (req, res) => {
 });
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: any, res: { json: (arg0: { status: string; timestamp: string; portainerAuth: string; cloudflareConfigured: boolean; cloudflareTunnelConfigured: boolean; }) => void; }) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -940,7 +940,7 @@ app.get('/health', (req, res) => {
 });
 
 // Listar tipos
-app.get('/api/tipos', (req, res) => {
+app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endpoint: string; exemplo: { nome: string; tipo: string; rede: string; porta: number; }; }; n8n: { endpoint: string; exemplo: { nome: string; tipo: string; rede: string; config: { postgresHost: string; postgresDb: string; postgresPassword: string; redisHost: string; redisPort: string; redisPassword: string; versaoN8n: string; }; }; observacao: string; }; cloudflare_dns: { endpoint: string; exemplos: { A: { nome: string; tipo: string; ipServidor: string; }; CNAME: { nome: string; tipo: string; ipServidor: string; }; }; }; cloudflare_tunnel: { endpoint: string; exemplos: { n8n_editor: { hostname: string; service: string; description: string; }; n8n_webhook: { hostname: string; service: string; description: string; }; }; observacao: string; }; }; }) => void; }) => {
   res.json({
     servicos: {
       redis: {
@@ -1006,7 +1006,7 @@ app.get('/api/tipos', (req, res) => {
 });
 
 // Status da autenticação
-app.get('/api/auth/status', authenticateToken, (req, res) => {
+app.get('/api/auth/status', authenticateToken, (req: any, res: { json: (arg0: { authenticated: boolean; expiresAt: string | null; timeRemaining: number; }) => void; }) => {
   res.json({
     authenticated: !!jwtCache.token,
     expiresAt: jwtCache.expiresAt ? new Date(jwtCache.expiresAt).toISOString() : null,
@@ -1015,7 +1015,7 @@ app.get('/api/auth/status', authenticateToken, (req, res) => {
 });
 
 // Forçar reautenticação
-app.post('/api/auth/refresh', authenticateToken, async (req, res) => {
+app.post('/api/auth/refresh', authenticateToken, async (req: any, res: { json: (arg0: { success: boolean; message: string; expiresAt: string; }) => void; status: (arg0: number) => { (): any; new(): any; json: { (arg0: { error: string; details: any; }): void; new(): any; }; }; }) => {
   try {
     jwtCache = { token: null, expiresAt: null };
     const jwt = await authenticatePortainer();
