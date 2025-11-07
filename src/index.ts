@@ -362,6 +362,14 @@ services:
         delay: 30s
         order: start-first
         failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n-editor-${nome}.rule=Host(\`editor.${nome}.${DOMAIN}\`)
+        - traefik.http.routers.n8n-editor-${nome}.entrypoints=websecure
+        - traefik.http.routers.n8n-editor-${nome}.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-editor-${nome}.service=n8n-editor-${nome}
+        - traefik.http.services.n8n-editor-${nome}.loadbalancer.server.port=5678
+        - traefik.http.services.n8n-editor-${nome}.loadbalancer.passHostHeader=true
 networks:
   ${rede}:
     name: ${rede}
@@ -443,6 +451,14 @@ services:
         delay: 30s
         order: start-first
         failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n-webhook-${nome}.rule=Host(\`webhooks.${nome}.${DOMAIN}\`)
+        - traefik.http.routers.n8n-webhook-${nome}.entrypoints=websecure
+        - traefik.http.routers.n8n-webhook-${nome}.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-webhook-${nome}.service=n8n-webhook-${nome}
+        - traefik.http.services.n8n-webhook-${nome}.loadbalancer.server.port=5678
+        - traefik.http.services.n8n-webhook-${nome}.loadbalancer.passHostHeader=true
 networks:
   ${rede}:
     name: ${rede}
@@ -729,7 +745,8 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
           console.log('✅ Stack Worker enviada (tempo limite atingido, assumindo sucesso)');
         } else {
           stacksCreated.push({ 
-            name: workerName,id: result.Id, 
+            name: workerName,
+            id: result.Id, 
             tipo: 'worker',
             concurrency: 10,
             status: 'confirmado'
@@ -1100,7 +1117,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 3.0.3-dev`);
+      console.log(`\n🌀 version: 3.1.0`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -1128,9 +1145,10 @@ const startServer = async () => {
       console.log(`   GET    /health - Health check`);
 
       console.log(`\n🎯 Tipos de stack suportados:`);
-      console.log(`   - redis: Stack Redis standalone`);
-      console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker)`);
+      console.log(`   - redis: Stack Redis standalone com Traefik`);
+      console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker) com Traefik`);
       console.log(`   - ⏱️  Timeout: 30 segundos por stack N8N`);
+      console.log(`   - 🔀 Traefik: Labels configuradas automaticamente`);
 
       console.log(`\n🚇 Cloudflare Tunnel:`);
       console.log(`   - Use /api/cloudflare/tunnel para adicionar hostnames ao túnel`);
