@@ -299,6 +299,7 @@ services:
       - ${rede}
     environment:
       - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${config.encryptionKey}
       - N8N_METRICS=true
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PAYLOAD_SIZE_MAX=16
@@ -388,6 +389,7 @@ services:
       - ${rede}
     environment:
       - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${config.encryptionKey}
       - N8N_METRICS=true
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PAYLOAD_SIZE_MAX=16
@@ -477,6 +479,7 @@ services:
       - ${rede}
     environment:
       - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${config.encryptionKey}
       - N8N_METRICS=true
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PAYLOAD_SIZE_MAX=16
@@ -631,10 +634,10 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
     // N8N - Cria 3 stacks separadas automaticamente com timeout de 30 segundos
     if (tipoLower === 'n8n') {
       // Validar configurações obrigatórias
-      if (!config.postgresHost || !config.postgresDb || !config.postgresPassword) {
+      if (!config.postgresHost || !config.postgresDb || !config.postgresPassword || !config.encryptionKey) {
         return res.status(400).json({
           error: 'Configurações obrigatórias para N8N',
-          message: 'É necessário fornecer: postgresHost, postgresDb, postgresPassword, redisHost, redisPort, redisPassword',
+          message: 'É necessário fornecer: postgresHost, postgresDb, postgresPassword, redisHost, redisPort, redisPassword, encryptionKey',
           exemplo: {
             config: {
               postgresHost: 'postgres-host',
@@ -643,6 +646,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
               redisHost: 'redis-host',
               redisPort: '6379',
               redisPassword: 'senha-redis',
+              encryptionKey: 'sua-chave-encryption-key-segura',
               versaoN8n: 'latest'
             }
           }
@@ -1117,7 +1121,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 3.1.0`);
+      console.log(`\n🌀 version: 3.2.0`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
