@@ -609,7 +609,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       }
 
       const stackContent = getStackTemplate('redis', nome, rede, { porta: portaFinal });
-      const stackName = `redis-${nome}-${portaFinal}`;
+      const stackName = `redis-${nome}`;
 
       const stackData = await createSingleStack(stackName, stackContent, swarmId, endpointId, headers);
 
