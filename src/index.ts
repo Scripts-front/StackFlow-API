@@ -319,7 +319,7 @@ services:
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - WEBHOOK_URL=https://webhook.${nome}.${DOMAIN}/
       - N8N_ENDPOINT_WEBHOOK=webhook
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
@@ -409,7 +409,7 @@ services:
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - WEBHOOK_URL=https://webhook.${nome}.${DOMAIN}/
       - N8N_ENDPOINT_WEBHOOK=webhook
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
@@ -455,7 +455,7 @@ services:
         failure_action: rollback
       labels:
         - traefik.enable=true
-        - traefik.http.routers.n8n-webhook-${nome}.rule=Host(\`webhooks.${nome}.${DOMAIN}\`)
+        - traefik.http.routers.n8n-webhook-${nome}.rule=Host(\`webhook.${nome}.${DOMAIN}\`)
         - traefik.http.routers.n8n-webhook-${nome}.entrypoints=websecure
         - traefik.http.routers.n8n-webhook-${nome}.tls.certresolver=letsencryptresolver
         - traefik.http.routers.n8n-webhook-${nome}.service=n8n-webhook-${nome}
@@ -499,7 +499,7 @@ services:
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - WEBHOOK_URL=https://webhook.${nome}.${DOMAIN}/
       - N8N_ENDPOINT_WEBHOOK=webhook
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
@@ -708,7 +708,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
             name: webhookName, 
             tipo: 'webhook',
             replicas: 2,
-            url: `https://webhooks.${nome}.${DOMAIN}`,
+            url: `https://webhook.${nome}.${DOMAIN}`,
             status: 'criado'
           });
           console.log('✅ Stack Webhook enviada (tempo limite atingido, assumindo sucesso)');
@@ -718,7 +718,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
             id: result.Id, 
             tipo: 'webhook',
             replicas: 2,
-            url: `https://webhooks.${nome}.${DOMAIN}`,
+            url: `https://webhook.${nome}.${DOMAIN}`,
             status: 'confirmado'
           });
           console.log('✅ Stack Webhook criada com sucesso');
@@ -780,7 +780,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
         errors: errors.length > 0 ? errors : undefined,
         urls: {
           editor: `https://editor.${nome}.${DOMAIN}`,
-          webhook: `https://webhooks.${nome}.${DOMAIN}`
+          webhook: `https://webhook.${nome}.${DOMAIN}`
         }
       });
     }
@@ -921,9 +921,9 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
             description: `Será criado: editor.cliente1.${DOMAIN}`
           },
           'N8N Webhook': {
-            hostname: 'webhooks.cliente1',
+            hostname: 'webhook.cliente1',
             service: 'http://n8n_webhook_cliente1:5678',
-            description: `Será criado: webhooks.cliente1.${DOMAIN}`
+            description: `Será criado: webhook.cliente1.${DOMAIN}`
           },
           'Redis': {
             hostname: 'redis-app1',
@@ -1071,9 +1071,9 @@ app.get('/api/tipos', (req, res) => {
             description: `Hostname completo será: editor.cliente1.${DOMAIN}`
           },
           n8n_webhook: {
-            hostname: 'webhooks.cliente1',
+            hostname: 'webhook.cliente1',
             service: 'http://n8n_webhook_cliente1:5678',
-            description: `Hostname completo será: webhooks.cliente1.${DOMAIN}`
+            description: `Hostname completo será: webhook.cliente1.${DOMAIN}`
           }
         },
         observacao: `Adiciona hostname ao túnel Cloudflare. O domínio ${DOMAIN} será adicionado automaticamente`
