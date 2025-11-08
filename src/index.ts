@@ -256,8 +256,6 @@ services:
     ]
     networks:
       - ${rede}
-    ports:
-      - ${porta}:6379
     volumes:
       - redis-${nome}:/data
     deploy:
@@ -270,13 +268,7 @@ services:
         limits:
           cpus: "1"
           memory: 1024M
-      labels:
-        - traefik.enable=true
-        - traefik.http.routers.redis-${nome}.rule=Host(\`redis-${nome}.${DOMAIN}\`)
-        - traefik.http.routers.redis-${nome}.entrypoints=websecure
-        - traefik.http.routers.redis-${nome}.tls.certresolver=letsencryptresolver
-        - traefik.http.routers.redis-${nome}.service=redis-${nome}
-        - traefik.http.services.redis-${nome}.loadbalancer.server.port=${porta}
+
 volumes:
   redis-${nome}:
     external: true
