@@ -307,6 +307,7 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_USER=postgres
       - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - DB_POSTGRESDB_POOL_SIZE=10 
       - N8N_PORT=5678
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
@@ -397,6 +398,7 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_USER=postgres
       - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - DB_POSTGRESDB_POOL_SIZE=10 
       - N8N_PORT=5678
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
@@ -487,6 +489,7 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_USER=postgres
       - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - DB_POSTGRESDB_POOL_SIZE=10 
       - N8N_PORT=5678
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
