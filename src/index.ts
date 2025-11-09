@@ -522,7 +522,7 @@ services:
       - N8N_NODE_PATH=/home/node/.n8n/nodes
     deploy:
       mode: replicated
-      replicas: 1
+      replicas: 2
       placement:
         constraints:
           - node.labels.n8n-new == true
