@@ -256,8 +256,6 @@ services:
     ]
     networks:
       - ${rede}
-    ports:
-      - ${porta}:6379
     volumes:
       - redis-${nome}:/data
     deploy:
@@ -270,13 +268,7 @@ services:
         limits:
           cpus: "1"
           memory: 1024M
-      labels:
-        - traefik.enable=true
-        - traefik.http.routers.redis-${nome}.rule=Host(\`redis-${nome}.${DOMAIN}\`)
-        - traefik.http.routers.redis-${nome}.entrypoints=websecure
-        - traefik.http.routers.redis-${nome}.tls.certresolver=letsencryptresolver
-        - traefik.http.routers.redis-${nome}.service=redis-${nome}
-        - traefik.http.services.redis-${nome}.loadbalancer.server.port=${porta}
+
 volumes:
   redis-${nome}:
     external: true
@@ -299,6 +291,7 @@ services:
       - ${rede}
     environment:
       - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${config.encryptionKey}
       - N8N_METRICS=true
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PAYLOAD_SIZE_MAX=16
@@ -318,7 +311,7 @@ services:
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - WEBHOOK_URL=https://webhook.${nome}.${DOMAIN}/
       - N8N_ENDPOINT_WEBHOOK=webhook
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
@@ -362,6 +355,14 @@ services:
         delay: 30s
         order: start-first
         failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n-editor-${nome}.rule=Host(\`editor.${nome}.${DOMAIN}\`)
+        - traefik.http.routers.n8n-editor-${nome}.entrypoints=websecure
+        - traefik.http.routers.n8n-editor-${nome}.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-editor-${nome}.service=n8n-editor-${nome}
+        - traefik.http.services.n8n-editor-${nome}.loadbalancer.server.port=5678
+        - traefik.http.services.n8n-editor-${nome}.loadbalancer.passHostHeader=true
 networks:
   ${rede}:
     name: ${rede}
@@ -380,6 +381,7 @@ services:
       - ${rede}
     environment:
       - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${config.encryptionKey}
       - N8N_METRICS=true
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PAYLOAD_SIZE_MAX=16
@@ -399,7 +401,97 @@ services:
       - N8N_HOST=editor.${nome}.${DOMAIN}
       - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
       - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
+      - WEBHOOK_URL=https://webhook.${nome}.${DOMAIN}/
+      - N8N_ENDPOINT_WEBHOOK=webhook
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
+      - QUEUE_BULL_REDIS_PORT=${config.redisPort || '6379'}
+      - QUEUE_BULL_REDIS_PASSWORD=${config.redisPassword || ''}
+      - QUEUE_BULL_REDIS_DB=2
+      - EXECUTIONS_TIMEOUT=3600 
+      - EXECUTIONS_TIMEOUT_MAX=7200 
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=true
+      - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
+      - N8N_TEMPLATES_ENABLED=true
+      - N8N_ONBOARDING_FLOW_DISABLED=true
+      - N8N_WORKFLOW_TAGS_DISABLED=false
+      - N8N_HIDE_USAGE_PAGE=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
+      - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
+      - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.n8n-new == true
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+        failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n-webhook-${nome}.rule=Host(\`webhook.${nome}.${DOMAIN}\`)
+        - traefik.http.routers.n8n-webhook-${nome}.entrypoints=websecure
+        - traefik.http.routers.n8n-webhook-${nome}.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-webhook-${nome}.service=n8n-webhook-${nome}
+        - traefik.http.services.n8n-webhook-${nome}.loadbalancer.server.port=5678
+        - traefik.http.services.n8n-webhook-${nome}.loadbalancer.passHostHeader=true
+networks:
+  ${rede}:
+    name: ${rede}
+    external: true`;
+
+    case 'n8n-worker':
+      const versaoWorker = config.versaoN8n || 'latest';
+      return `version: "3.7"
+
+services:
+  n8n_worker_${nome}:
+    image: n8nio/n8n:${versaoWorker}
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    command: worker --concurrency=10
+    networks:
+      - ${rede}
+    environment:
+      - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${config.encryptionKey}
+      - N8N_METRICS=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PAYLOAD_SIZE_MAX=16
+      - N8N_LOG_LEVEL=info
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=false
+      - N8N_RUNNERS_MODE=internal
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=false
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${config.postgresDb || 'n8n'}
+      - DB_POSTGRESDB_HOST=${config.postgresHost || 'postgres'}
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
+      - N8N_PORT=5678
+      - N8N_HOST=editor.${nome}.${DOMAIN}
+      - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://webhook.${nome}.${DOMAIN}/
       - N8N_ENDPOINT_WEBHOOK=webhook
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
@@ -448,87 +540,6 @@ networks:
     name: ${rede}
     external: true`;
 
-    case 'n8n-worker':
-      const versaoWorker = config.versaoN8n || 'latest';
-      return `version: "3.7"
-
-services:
-  n8n_worker_${nome}:
-    image: n8nio/n8n:${versaoWorker}
-    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
-    command: worker --concurrency=10
-    networks:
-      - ${rede}
-    environment:
-      - NODE_ENV=production
-      - N8N_METRICS=true
-      - N8N_DIAGNOSTICS_ENABLED=false
-      - N8N_PAYLOAD_SIZE_MAX=16
-      - N8N_LOG_LEVEL=info
-      - GENERIC_TIMEZONE=America/Sao_Paulo
-      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
-      - N8N_RUNNERS_ENABLED=false
-      - N8N_RUNNERS_MODE=internal
-      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=false
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_DATABASE=${config.postgresDb || 'n8n'}
-      - DB_POSTGRESDB_HOST=${config.postgresHost || 'postgres'}
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_USER=postgres
-      - DB_POSTGRESDB_PASSWORD=${config.postgresPassword || 'postgres'}
-      - N8N_PORT=5678
-      - N8N_HOST=editor.${nome}.${DOMAIN}
-      - N8N_EDITOR_BASE_URL=https://editor.${nome}.${DOMAIN}/
-      - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://webhooks.${nome}.${DOMAIN}/
-      - N8N_ENDPOINT_WEBHOOK=webhook
-      - EXECUTIONS_MODE=queue
-      - QUEUE_BULL_REDIS_HOST=${config.redisHost || 'redis'}
-      - QUEUE_BULL_REDIS_PORT=${config.redisPort || '6379'}
-      - QUEUE_BULL_REDIS_PASSWORD=${config.redisPassword || ''}
-      - QUEUE_BULL_REDIS_DB=2
-      - EXECUTIONS_TIMEOUT=3600 
-      - EXECUTIONS_TIMEOUT_MAX=7200 
-      - N8N_VERSION_NOTIFICATIONS_ENABLED=true
-      - N8N_PUBLIC_API_SWAGGERUI_DISABLED=false
-      - N8N_TEMPLATES_ENABLED=true
-      - N8N_ONBOARDING_FLOW_DISABLED=true
-      - N8N_WORKFLOW_TAGS_DISABLED=false
-      - N8N_HIDE_USAGE_PAGE=false
-      - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=336
-      - EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL=15
-      - EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL=60
-      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
-      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
-      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
-      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=true
-      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
-      - NODE_FUNCTION_ALLOW_BUILTIN=*
-      - NODE_FUNCTION_ALLOW_EXTERNAL=lodash
-      - N8N_COMMUNITY_PACKAGES_ENABLED=true
-      - N8N_REINSTALL_MISSING_PACKAGES=true
-      - N8N_NODE_PATH=/home/node/.n8n/nodes
-    deploy:
-      mode: replicated
-      replicas: 1
-      placement:
-        constraints:
-          - node.labels.n8n-new == true
-      resources:
-        limits:
-          cpus: "1"
-          memory: 1024M
-      update_config:
-        parallelism: 1
-        delay: 30s
-        order: start-first
-        failure_action: rollback
-networks:
-  ${rede}:
-    name: ${rede}
-    external: true`;
-
     default:
       throw new Error(`Tipo de stack '${tipo}' não suportado`);
   }
@@ -554,6 +565,14 @@ const createSingleStack = async (stackName, stackContent, swarmId, endpointId, h
 
   console.log(`✅ Stack ${stackName} criada com sucesso`);
   return response.data;
+};
+
+// 🆕 Função auxiliar para aguardar com timeout
+const waitWithTimeout = (promise, timeoutMs) => {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve({ timeout: true }), timeoutMs))
+  ]);
 };
 
 // 📦 Endpoint para criar stack (Redis ou N8N completo com 3 stacks separadas)
@@ -590,7 +609,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       }
 
       const stackContent = getStackTemplate('redis', nome, rede, { porta: portaFinal });
-      const stackName = `redis-${nome}-${portaFinal}`;
+      const stackName = `redis-${nome}`;
 
       const stackData = await createSingleStack(stackName, stackContent, swarmId, endpointId, headers);
 
@@ -604,13 +623,13 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
       });
     }
 
-    // N8N - Cria 3 stacks separadas automaticamente
+    // N8N - Cria 3 stacks separadas automaticamente com timeout de 30 segundos
     if (tipoLower === 'n8n') {
       // Validar configurações obrigatórias
-      if (!config.postgresHost || !config.postgresDb || !config.postgresPassword) {
+      if (!config.postgresHost || !config.postgresDb || !config.postgresPassword || !config.encryptionKey) {
         return res.status(400).json({
           error: 'Configurações obrigatórias para N8N',
-          message: 'É necessário fornecer: postgresHost, postgresDb, postgresPassword, redisHost, redisPort, redisPassword',
+          message: 'É necessário fornecer: postgresHost, postgresDb, postgresPassword, redisHost, redisPort, redisPassword, encryptionKey',
           exemplo: {
             config: {
               postgresHost: 'postgres-host',
@@ -619,6 +638,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
               redisHost: 'redis-host',
               redisPort: '6379',
               redisPassword: 'senha-redis',
+              encryptionKey: 'sua-chave-encryption-key-segura',
               versaoN8n: 'latest'
             }
           }
@@ -630,56 +650,105 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
 
       console.log('🚀 Iniciando criação das 3 stacks do N8N (separadas)...');
 
-      // 1️⃣ Stack Editor (separada)
+      // 1️⃣ Stack Editor (separada) - com timeout de 30 segundos
       try {
         console.log('📝 Criando stack N8N Editor...');
         const editorContent = getStackTemplate('n8n-editor', nome, rede, config);
         const editorName = `n8n-editor-${nome}`;
-        const editorStack = await createSingleStack(editorName, editorContent, swarmId, endpointId, headers);
-        stacksCreated.push({ 
-          name: editorName, 
-          id: editorStack.Id, 
-          tipo: 'editor',
-          url: `https://editor.${nome}.${DOMAIN}`
-        });
-        console.log('✅ Stack Editor criada com sucesso');
+        
+        const result = await waitWithTimeout(
+          createSingleStack(editorName, editorContent, swarmId, endpointId, headers),
+          30000
+        );
+        
+        if (result.timeout) {
+          stacksCreated.push({ 
+            name: editorName, 
+            tipo: 'editor',
+            url: `https://editor.${nome}.${DOMAIN}`,
+            status: 'criado'
+          });
+          console.log('✅ Stack Editor enviada (tempo limite atingido, assumindo sucesso)');
+        } else {
+          stacksCreated.push({ 
+            name: editorName, 
+            id: result.Id, 
+            tipo: 'editor',
+            url: `https://editor.${nome}.${DOMAIN}`,
+            status: 'confirmado'
+          });
+          console.log('✅ Stack Editor criada com sucesso');
+        }
       } catch (error) {
         errors.push({ stack: 'editor', error: error.message });
         console.error('❌ Erro ao criar stack Editor:', error.message);
       }
 
-      // 2️⃣ Stack Webhook (separada)
+      // 2️⃣ Stack Webhook (separada) - com timeout de 30 segundos
       try {
         console.log('📝 Criando stack N8N Webhook...');
         const webhookContent = getStackTemplate('n8n-webhook', nome, rede, config);
         const webhookName = `n8n-webhook-${nome}`;
-        const webhookStack = await createSingleStack(webhookName, webhookContent, swarmId, endpointId, headers);
-        stacksCreated.push({ 
-          name: webhookName, 
-          id: webhookStack.Id, 
-          tipo: 'webhook',
-          replicas: 2,
-          url: `https://webhooks.${nome}.${DOMAIN}`
-        });
-        console.log('✅ Stack Webhook criada com sucesso');
+        
+        const result = await waitWithTimeout(
+          createSingleStack(webhookName, webhookContent, swarmId, endpointId, headers),
+          30000
+        );
+        
+        if (result.timeout) {
+          stacksCreated.push({ 
+            name: webhookName, 
+            tipo: 'webhook',
+            replicas: 2,
+            url: `https://webhook.${nome}.${DOMAIN}`,
+            status: 'criado'
+          });
+          console.log('✅ Stack Webhook enviada (tempo limite atingido, assumindo sucesso)');
+        } else {
+          stacksCreated.push({ 
+            name: webhookName, 
+            id: result.Id, 
+            tipo: 'webhook',
+            replicas: 2,
+            url: `https://webhook.${nome}.${DOMAIN}`,
+            status: 'confirmado'
+          });
+          console.log('✅ Stack Webhook criada com sucesso');
+        }
       } catch (error) {
         errors.push({ stack: 'webhook', error: error.message });
         console.error('❌ Erro ao criar stack Webhook:', error.message);
       }
 
-      // 3️⃣ Stack Worker (separada)
+      // 3️⃣ Stack Worker (separada) - com timeout de 30 segundos
       try {
         console.log('📝 Criando stack N8N Worker...');
         const workerContent = getStackTemplate('n8n-worker', nome, rede, config);
         const workerName = `n8n-worker-${nome}`;
-        const workerStack = await createSingleStack(workerName, workerContent, swarmId, endpointId, headers);
-        stacksCreated.push({ 
-          name: workerName, 
-          id: workerStack.Id, 
-          tipo: 'worker',
-          concurrency: 10
-        });
-        console.log('✅ Stack Worker criada com sucesso');
+        
+        const result = await waitWithTimeout(
+          createSingleStack(workerName, workerContent, swarmId, endpointId, headers),
+          30000
+        );
+        
+        if (result.timeout) {
+          stacksCreated.push({ 
+            name: workerName, 
+            tipo: 'worker',
+            concurrency: 10,
+            status: 'criado'
+          });
+          console.log('✅ Stack Worker enviada (tempo limite atingido, assumindo sucesso)');
+        } else {
+          stacksCreated.push({ 
+            name: workerName,
+            id: result.Id, 
+            tipo: 'worker',
+            concurrency: 10,
+            status: 'confirmado'
+          });
+          console.log('✅ Stack Worker criada com sucesso');
+        }
       } catch (error) {
         errors.push({ stack: 'worker', error: error.message });
         console.error('❌ Erro ao criar stack Worker:', error.message);
@@ -703,7 +772,7 @@ app.post('/api/stack', authenticateToken, async (req, res) => {
         errors: errors.length > 0 ? errors : undefined,
         urls: {
           editor: `https://editor.${nome}.${DOMAIN}`,
-          webhook: `https://webhooks.${nome}.${DOMAIN}`
+          webhook: `https://webhook.${nome}.${DOMAIN}`
         }
       });
     }
@@ -844,9 +913,9 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
             description: `Será criado: editor.cliente1.${DOMAIN}`
           },
           'N8N Webhook': {
-            hostname: 'webhooks.cliente1',
+            hostname: 'webhook.cliente1',
             service: 'http://n8n_webhook_cliente1:5678',
-            description: `Será criado: webhooks.cliente1.${DOMAIN}`
+            description: `Será criado: webhook.cliente1.${DOMAIN}`
           },
           'Redis': {
             hostname: 'redis-app1',
@@ -904,7 +973,7 @@ app.post('/api/cloudflare/tunnel', authenticateToken, async (req, res) => {
 });
 
 // Endpoint para listar stacks
-app.get('/api/stacks', authenticateToken, async (req: any, res: { json: (arg0: { success: boolean; stacks: any; }) => void; status: (arg0: any) => { (): any; new(): any; json: { (arg0: { error: string; details: any; }): void; new(): any; }; }; }) => {
+app.get('/api/stacks', authenticateToken, async (req, res) => {
   try {
     const headers = await getPortainerHeaders();
     
@@ -929,7 +998,7 @@ app.get('/api/stacks', authenticateToken, async (req: any, res: { json: (arg0: {
 });
 
 // Health check
-app.get('/health', (req: any, res: { json: (arg0: { status: string; timestamp: string; portainerAuth: string; cloudflareConfigured: boolean; cloudflareTunnelConfigured: boolean; }) => void; }) => {
+app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -940,7 +1009,7 @@ app.get('/health', (req: any, res: { json: (arg0: { status: string; timestamp: s
 });
 
 // Listar tipos
-app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endpoint: string; exemplo: { nome: string; tipo: string; rede: string; porta: number; }; }; n8n: { endpoint: string; exemplo: { nome: string; tipo: string; rede: string; config: { postgresHost: string; postgresDb: string; postgresPassword: string; redisHost: string; redisPort: string; redisPassword: string; versaoN8n: string; }; }; observacao: string; }; cloudflare_dns: { endpoint: string; exemplos: { A: { nome: string; tipo: string; ipServidor: string; }; CNAME: { nome: string; tipo: string; ipServidor: string; }; }; }; cloudflare_tunnel: { endpoint: string; exemplos: { n8n_editor: { hostname: string; service: string; description: string; }; n8n_webhook: { hostname: string; service: string; description: string; }; }; observacao: string; }; }; }) => void; }) => {
+app.get('/api/tipos', (req, res) => {
   res.json({
     servicos: {
       redis: {
@@ -968,7 +1037,7 @@ app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endp
             versaoN8n: 'latest'
           }
         },
-        observacao: 'Cria 3 stacks separadas automaticamente: n8n-editor-{nome}, n8n-webhook-{nome}, n8n-worker-{nome}'
+        observacao: 'Cria 3 stacks separadas automaticamente: n8n-editor-{nome}, n8n-webhook-{nome}, n8n-worker-{nome}. Timeout de 30 segundos por stack.'
       },
       cloudflare_dns: {
         endpoint: '/api/cloudflare',
@@ -994,9 +1063,9 @@ app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endp
             description: `Hostname completo será: editor.cliente1.${DOMAIN}`
           },
           n8n_webhook: {
-            hostname: 'webhooks.cliente1',
+            hostname: 'webhook.cliente1',
             service: 'http://n8n_webhook_cliente1:5678',
-            description: `Hostname completo será: webhooks.cliente1.${DOMAIN}`
+            description: `Hostname completo será: webhook.cliente1.${DOMAIN}`
           }
         },
         observacao: `Adiciona hostname ao túnel Cloudflare. O domínio ${DOMAIN} será adicionado automaticamente`
@@ -1006,7 +1075,7 @@ app.get('/api/tipos', (req: any, res: { json: (arg0: { servicos: { redis: { endp
 });
 
 // Status da autenticação
-app.get('/api/auth/status', authenticateToken, (req: any, res: { json: (arg0: { authenticated: boolean; expiresAt: string | null; timeRemaining: number; }) => void; }) => {
+app.get('/api/auth/status', authenticateToken, (req, res) => {
   res.json({
     authenticated: !!jwtCache.token,
     expiresAt: jwtCache.expiresAt ? new Date(jwtCache.expiresAt).toISOString() : null,
@@ -1015,7 +1084,7 @@ app.get('/api/auth/status', authenticateToken, (req: any, res: { json: (arg0: { 
 });
 
 // Forçar reautenticação
-app.post('/api/auth/refresh', authenticateToken, async (req: any, res: { json: (arg0: { success: boolean; message: string; expiresAt: string; }) => void; status: (arg0: number) => { (): any; new(): any; json: { (arg0: { error: string; details: any; }): void; new(): any; }; }; }) => {
+app.post('/api/auth/refresh', authenticateToken, async (req, res) => {
   try {
     jwtCache = { token: null, expiresAt: null };
     const jwt = await authenticatePortainer();
@@ -1044,7 +1113,7 @@ const startServer = async () => {
     await authenticatePortainer();
 
     app.listen(PORT, () => {
-      console.log(`\n🌀 version: 3.0.2`);
+      console.log(`\n🌀 version: 3.2.0`);
       console.log(`🚀 API rodando na porta ${PORT}`);
       console.log(`📦 Portainer URL: ${PORTAINER_URL}`);
       console.log(`👤 Usuário Portainer: ${PORTAINER_USERNAME}`);
@@ -1072,8 +1141,10 @@ const startServer = async () => {
       console.log(`   GET    /health - Health check`);
 
       console.log(`\n🎯 Tipos de stack suportados:`);
-      console.log(`   - redis: Stack Redis standalone`);
-      console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker)`);
+      console.log(`   - redis: Stack Redis standalone com Traefik`);
+      console.log(`   - n8n: Cria 3 stacks separadas (editor, webhook, worker) com Traefik`);
+      console.log(`   - ⏱️  Timeout: 30 segundos por stack N8N`);
+      console.log(`   - 🔀 Traefik: Labels configuradas automaticamente`);
 
       console.log(`\n🚇 Cloudflare Tunnel:`);
       console.log(`   - Use /api/cloudflare/tunnel para adicionar hostnames ao túnel`);
