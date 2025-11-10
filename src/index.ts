@@ -263,7 +263,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.role == manager
+          - node.labels.n8n-new == true
       resources:
         limits:
           cpus: "1"
